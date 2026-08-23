@@ -7,7 +7,7 @@ import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
-logger = logging.getLogger("ham.security")
+logger = logging.getLogger("uvicorn.error.ham.security")
 logger.setLevel(logging.INFO)
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 DUMMY_HASH = password_hasher.hash("not-a-real-password")

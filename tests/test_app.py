@@ -31,7 +31,7 @@ def test_health_is_public_and_data_page_is_protected(app_client):
 
 def test_successful_and_failed_login_without_secret_logging(app_client, caplog):
     _, client = app_client
-    with caplog.at_level(logging.INFO, logger="ham.security"):
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.ham.security"):
         failed = login(client, "wrong-password")
         success = login(client)
     assert failed.status_code == 401
