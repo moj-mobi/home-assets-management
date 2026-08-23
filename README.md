@@ -12,6 +12,8 @@ docker compose up -d --build
 
 Aplikacija je nato na <http://127.0.0.1:8000>. Stanje preverite z `docker compose ps` ali na <http://127.0.0.1:8000/health>.
 
+Naslov in vrata gostitelja sta nastavljiva z `HAM_BIND_ADDRESS` in `HAM_HOST_PORT` v lokalni datoteki `.env`. Privzeti vrednosti sta `127.0.0.1` in `8000`; vezave ne spreminjajte na `0.0.0.0`, dokler ni dodan dokumentirani varnostni sklop.
+
 Ustavitev:
 
 ```sh
