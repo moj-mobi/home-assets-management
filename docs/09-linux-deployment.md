@@ -109,3 +109,6 @@ Prvi prenos prek PowerShell cevovoda `git archive | ssh` je na oddaljeni strani 
 ## Faza 1.1 – varnostni deployment
 
 Pred buildom mora strežniški `.env` vsebovati naključno `HAM_SESSION_SECRET`; vrednost se ne izpisuje v `docker compose config` ali loge. Po migraciji `20260824_02` se uporabnik inicializira izključno z interaktivnim `docker compose exec ham python -m app.cli set-password`. HAM ostane na `127.0.0.1:8010`; Nginx Proxy Manager še ni vključen. Pred migracijo se preverijo backup, trenutna revizija in asset ID `1`.
+## Izolirani LAN dostop
+
+Dne 24. avgusta 2026 je bila po izrecni skrbniški odobritvi strežniška vezava spremenjena na `0.0.0.0:8010`, ker je strežnik izoliran za lokalnimi požarnimi zidovi. Aplikacija prek `HAM_ALLOWED_HOSTS` dovoljuje samo `10.200.100.11`, `127.0.0.1` in `localhost`; zahteva z neznanim `Host` je bila zavrnjena s HTTP 400. Dostop `http://10.200.100.11:8010/login` in health sta bila preverjena z drugega računalnika v omrežju. Nginx Proxy Manager in požarni zid nista bila spremenjena. Ker povezava uporablja HTTP, promet ni šifriran; za širšo ali manj zaupanja vredno uporabo je naslednji korak HTTPS in `HAM_SECURE_COOKIES=true`.
