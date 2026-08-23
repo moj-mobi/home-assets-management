@@ -63,9 +63,45 @@ Zaznano je rootovo cron opravilo `/etc/cron.d/mi5srv-backup` z dovoljenji `0644`
 1. Vrata `8000` so v konfliktu s Portainerjem; uporabiti je treba strežniško prilagoditev na `127.0.0.1:8010:8000`.
 2. Uporabnik `ella` ne more ustvariti ciljne mape neposredno pod `/opt`; potreben je enkraten skrbniški poseg.
 3. Centralna backup strategija ni potrjena, zaznano je le poimenovano cron opravilo.
-4. Docker je nameščen in dostopen, vendar dejanski HAM build, migracija, health check in trajnost podatkov še niso bili integracijsko preverjeni.
+4. Docker integracijsko preverjanje Faze 0.2 je uspešno; odprta ostajata varnostni sklop in odločitev o poznejši vključitvi v reverse proxy.
 5. Več obstoječih storitev je objavljenih na vseh omrežnih vmesnikih. HAM mora ostati vezan na loopback, dokler ni dodan zahtevani varnostni sklop.
 
 ## Predlagani naslednji deployment korak
 
-Po izrecni odobritvi sprememb naj skrbnik najprej ustvari `/opt/home-assets-management` z lastnikom in skupino, primernima za uporabnika `ella`. Nato naj se projekt prenese v to mapo in doda strežniška Compose prilagoditev, ki objavi HAM samo kot `127.0.0.1:8010:8000`, pri čemer mora `data/` ostati lokalna vezana mapa na `/opt` disku. Šele nato naj se izvede prvi `docker compose up -d --build`, preveri Alembic migracija, `/health`, ustvarjanje testnega zapisa, ponovna izdelava vsebnika, ohranitev podatkov in SQLite backup/restore. Povezava z Nginx Proxy Managerjem ni del tega koraka.
+Prvi deployment je izveden. Naslednji korak naj bo opredelitev funkcionalne Faze 1 oziroma varnostnega sklopa pred kakršnokoli omrežno objavo. Do takrat naj HAM ostane na `127.0.0.1:8010` in nepovezan z Nginx Proxy Managerjem.
+
+## Faza 0.2 – prvi testni Docker deployment
+
+Deployment je bil izveden 24. avgusta 2026 v `/opt/home-assets-management` iz aplikacijskega commita `809e5e834eb68debbbea12b047baad9f494d69dc`. Naknadno je bil prenesen še popravek line-ending pravil iz commita `a29ed23c74bd0a3b8d4072c3597f2587d07037f5`.
+
+### Rezultati
+
+| Preverjanje | Rezultat |
+|---|---|
+| Compose konfiguracija | uspešna |
+| Vezava | `127.0.0.1:8010:8000` |
+| Docker build | uspešen, slika `home-assets-management-ham` |
+| Zagon vsebnika | uspešen, stanje `healthy` |
+| Alembic | `20260824_01 (head)` |
+| Health endpoint | HTTP 200, `{"status":"ok"}` |
+| Začetna stran | HTTP 200 |
+| Testni asset | ID `1`, `HAM INTEGRATION TEST 2026-08-24` |
+| Ponovno ustvarjanje | `docker compose up -d --force-recreate` uspešen |
+| Trajnost | testni asset ID `1` je ostal prisoten |
+| Backup | uspešen, 20.480 bajtov |
+| SQLite integrity check | `ok` |
+| Backup shema | tabeli `alembic_version` in `assets` |
+| Ločena začasna obnova | uspešna; obnovljen isti testni zapis |
+
+Backup je shranjen v `data/backups/ham-20260823-225816.db`. Čas v imenu je čas strežnika (UTC). Začasna obnovitvena baza je bila po uspešnem preverjanju odstranjena; aktivna baza ni bila prepisana.
+
+### Opažena in odpravljena težava
+
+Prvi prenos prek PowerShell cevovoda `git archive | ssh` je na oddaljeni strani pretvoril LF v CRLF, zato Ubuntu ni mogel izvesti `backup-ham.sh`. Projekt je bil ponovno prenesen z binarno varnim TAR/SCP postopkom, dodan pa je bil `.gitattributes` z `eol=lf` za Linux skripte. Po popravku je bilo v `backup-ham.sh` potrjenih nič CR bajtov in backup je uspel.
+
+### Odprte točke
+
+- HAM še nima varnostnega sklopa za dostop iz LAN ali interneta.
+- Nginx Proxy Manager ni povezan s HAM.
+- Vključitev HAM backupov v obstoječo centralno backup strategijo še ni potrjena.
+- Testni asset ID `1` ostaja v bazi kot jasno označen integracijski zapis, ker aplikacija še nima varnega endpointa za brisanje.
