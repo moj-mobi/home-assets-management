@@ -112,3 +112,10 @@ Pred buildom mora strežniški `.env` vsebovati naključno `HAM_SESSION_SECRET`;
 ## Izolirani LAN dostop
 
 Dne 24. avgusta 2026 je bila po izrecni skrbniški odobritvi strežniška vezava spremenjena na `0.0.0.0:8010`, ker je strežnik izoliran za lokalnimi požarnimi zidovi. Aplikacija prek `HAM_ALLOWED_HOSTS` dovoljuje samo `10.200.100.11`, `127.0.0.1` in `localhost`; zahteva z neznanim `Host` je bila zavrnjena s HTTP 400. Dostop `http://10.200.100.11:8010/login` in health sta bila preverjena z drugega računalnika v omrežju. Nginx Proxy Manager in požarni zid nista bila spremenjena. Ker povezava uporablja HTTP, promet ni šifriran; za širšo ali manj zaupanja vredno uporabo je naslednji korak HTTPS in `HAM_SECURE_COOKIES=true`.
+## Zaključek Faze 1.1
+
+Faza 1.1 je bila 24. avgusta 2026 uspešno nameščena in integracijsko preverjena. Aktivna Alembic revizija je `20260824_02`; asset ID `1` je ostal ohranjen. Lokalni uporabnik je inicializiran z interaktivnim CLI, v bazi je samo Argon2id hash. Preverjeni so prijava, odjava, strežniška razveljavitev seje, CSRF, javni health, 30-minutna neaktivnost ter blokada po petih neuspehih.
+
+Pri prvem brskalniškem testu je samodejna zahteva `/favicon.ico` razveljavila anonimno prijavno sejo in povzročila CSRF zavrnitev. Pot je zdaj javna in vrača 204; regresijski test pokriva zaporedje login–favicon–POST. Varnostni dogodki so usmerjeni v Uvicornove Docker loge. V dejanskem preizkusu sta bila zabeležena `logout` in `login_success`, brez gesel, hashov, sejnih skrivnosti, CSRF tokenov ali piškotkov.
+
+Vsebnik je `healthy`, health vrača `{"status":"ok"}`, vezava pa je po izrecni skrbniški odobritvi `0.0.0.0:8010` z omejitvijo dovoljenih gostiteljev. Odprta ostajata HTTPS in nastavitev `HAM_SECURE_COOKIES=true`, preden bi okolje prenehalo biti zaupanja vreden izoliran LAN.
