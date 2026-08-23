@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.config import Settings
 from app.db import build_engine, build_session_factory, session_dependency
 from app.models import Asset, LocalUser
@@ -76,6 +77,7 @@ def create_app(settings=None):
         return await call_next(request)
 
     app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, session_cookie="ham_session", max_age=settings.session_max_age_seconds, same_site="lax", https_only=settings.secure_cookies)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
 
     @app.get("/health", include_in_schema=False)
     def health():

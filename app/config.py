@@ -12,6 +12,7 @@ class Settings:
     environment: str = "development"
     secure_cookies: bool = False
     session_max_age_seconds: int = 1800
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "testserver")
     app_name: str = "HAM"
 
     @classmethod
@@ -31,6 +32,7 @@ class Settings:
             environment=environment,
             secure_cookies=os.getenv("HAM_SECURE_COOKIES", "false").lower() in {"1", "true", "yes"},
             session_max_age_seconds=int(os.getenv("HAM_SESSION_MAX_AGE_SECONDS", "1800")),
+            allowed_hosts=tuple(h.strip() for h in os.getenv("HAM_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",") if h.strip()),
         )
 
     def ensure_directories(self) -> None:

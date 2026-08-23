@@ -72,3 +72,8 @@ def test_open_redirect_is_rejected(app_client):
     page = client.get("/login?next=//evil.example")
     response = client.post("/login", data={"username": "local-test-user", "password": TEST_PASSWORD, "csrf_token": csrf_from(page), "next_path": "//evil.example"}, follow_redirects=False)
     assert response.headers["location"] == "/"
+
+def test_untrusted_host_is_rejected(app_client):
+    _, client = app_client
+    assert client.get("/health", headers={"host": "evil.example"}).status_code == 400
+    assert client.get("/health", headers={"host": "127.0.0.1"}).status_code == 200
