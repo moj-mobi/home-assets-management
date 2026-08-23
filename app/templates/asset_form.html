@@ -1,0 +1,12 @@
+<form hx-post="/assets" hx-target="#asset-list" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful){this.reset();document.querySelector('#empty-row')?.remove()}">
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <div class="form-grid">
+    <label>Naziv*<input name="name" required maxlength="200"></label>
+    <label>Kategorija<input name="category" maxlength="100"></label>
+    <label>Datum nakupa<input name="purchase_date" type="date"></label>
+    <label>Cena<input name="purchase_price" type="number" min="0" step="0.01"></label>
+  </div>
+  <label>Opombe<textarea name="notes" rows="3" maxlength="5000"></textarea></label>
+  <button type="submit">Shrani</button>
+</form>
+

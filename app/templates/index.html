@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Domače premoženje</h1>
+  <p>Preprost lokalni pregled opreme, naprav in drugih sredstev.</p>
+</section>
+<section class="card">
+  <h2>Dodaj sredstvo</h2>
+  {% include "asset_form.html" %}
+</section>
+<section class="card">
+  <h2>Evidenca</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Naziv</th><th>Kategorija</th><th>Datum nakupa</th><th>Cena</th></tr></thead>
+      <tbody id="asset-list">
+      {% for asset in assets %}{% include "asset_row.html" %}{% else %}
+        <tr id="empty-row"><td colspan="4" class="muted">Ni še vnesenih sredstev.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+

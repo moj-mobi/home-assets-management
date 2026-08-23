@@ -1,0 +1,2 @@
+<tr><td>{{ asset.name }}</td><td>{{ asset.category or '—' }}</td><td>{{ asset.purchase_date or '—' }}</td><td>{% if asset.purchase_price is not none %}{{ '%.2f'|format(asset.purchase_price) }} €{% else %}—{% endif %}</td></tr>
+
