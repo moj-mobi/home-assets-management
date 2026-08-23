@@ -33,7 +33,7 @@ def ensure_csrf(request):
 def valid_csrf(request, supplied):
     valid = constant_time_equal(request.session.get("csrf"), supplied)
     if not valid:
-        logger.warning("security_event=csrf_rejected")
+        logger.warning("security_event=csrf_rejected session_cookie_present=%s session_token_present=%s submitted_token_present=%s", "ham_session" in request.cookies, bool(request.session.get("csrf")), bool(supplied))
     return valid
 
 
