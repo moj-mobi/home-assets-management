@@ -77,3 +77,12 @@ def test_untrusted_host_is_rejected(app_client):
     _, client = app_client
     assert client.get("/health", headers={"host": "evil.example"}).status_code == 400
     assert client.get("/health", headers={"host": "127.0.0.1"}).status_code == 200
+
+def test_favicon_does_not_invalidate_anonymous_login_csrf(app_client):
+    _, client = app_client
+    page = client.get("/login")
+    token = csrf_from(page)
+    assert client.get("/favicon.ico").status_code == 204
+    response = client.post("/login", data={"username": "invalid-test-user", "password": "invalid-test-password", "csrf_token": token, "next_path": "/"})
+    assert response.status_code == 401
+    assert "Neveljavna zahteva" not in response.text

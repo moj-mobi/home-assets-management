@@ -5,7 +5,7 @@ from functools import partial
 from pathlib import Path
 from urllib.parse import quote
 from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
@@ -57,7 +57,7 @@ def create_app(settings=None):
     @app.middleware("http")
     async def authentication(request, call_next):
         path = request.url.path
-        if path in {"/health", "/login"} or path.startswith("/static/"):
+        if path in {"/health", "/login", "/favicon.ico"} or path.startswith("/static/"):
             return await call_next(request)
         uid, sid = request.session.get("uid"), request.session.get("sid")
         valid = False
@@ -84,6 +84,10 @@ def create_app(settings=None):
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return Response(status_code=204)
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, next: str = "/", db: Session = Depends(get_db)):
