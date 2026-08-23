@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Prijava — HAM{% endblock %}
+{% block content %}
+<section class="card login-card">
+  <h1>Prijava</h1>
+  {% if not initialized %}<p class="error">Lokalni uporabnik še ni inicializiran. Uporabite administrativni CLI-ukaz.</p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next_path" value="{{ next_path }}">
+    <label>Uporabniško ime<input name="username" required autocomplete="username" maxlength="100"></label>
+    <label>Geslo<input name="password" type="password" required autocomplete="current-password"></label>
+    <button type="submit" {% if not initialized %}disabled{% endif %}>Prijava</button>
+  </form>
+</section>
+{% endblock %}

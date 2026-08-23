@@ -1,4 +1,5 @@
 <form hx-post="/assets" hx-target="#asset-list" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful){this.reset();document.querySelector('#empty-row')?.remove()}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <div class="form-grid">
     <label>Naziv*<input name="name" required maxlength="200"></label>

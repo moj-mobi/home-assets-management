@@ -85,3 +85,13 @@ Internetna objava ni del MVP. Za poznejši HTTPS je predviden reverse proxy (na 
 SQLAlchemy model in seja sta ločena od poti FastAPI. Povezava je nastavljiva z `HAM_DATABASE_URL`, vendar MVP podpira in preizkuša samo SQLite. Morebitni prehod na PostgreSQL bo izveden z migracijami, brez sočasnega vzdrževanja dveh baz.
 
 Statični datoteki za slog in HTMX sta vključeni lokalno, zato običajna uporaba ne potrebuje internetne povezave.
+
+## Prijava in inicializacija uporabnika
+
+V strežniški `.env` ustvarite najmanj 32 znakov dolgo naključno `HAM_SESSION_SECRET`. Vrednost varno ustvarite z `python -c "import secrets; print(secrets.token_urlsafe(48))"`, je ne dodajte v Git in je ne podajajte kot argument ukaza. Pred uporabo aplikacije izvedite:
+
+```sh
+docker compose exec ham python -m app.cli set-password
+```
+
+Ukaz interaktivno vpraša za uporabniško ime in dvakrat skrito geslo dolžine najmanj 12 znakov. Isti ukaz spremeni geslo in razveljavi obstoječo sejo. Prijava je na `/login`, odjava pa v glavi aplikacije. Po petih neuspehih je račun blokiran 15 minut; počakajte na iztek ali ponovno varno nastavite geslo prek CLI. Piškotki so pri lokalnem HTTP dostopu `HttpOnly` in `SameSite=Lax`; ob poznejšem HTTPS nastavite `HAM_SECURE_COOKIES=true`.

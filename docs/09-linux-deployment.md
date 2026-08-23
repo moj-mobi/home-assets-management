@@ -105,3 +105,7 @@ Prvi prenos prek PowerShell cevovoda `git archive | ssh` je na oddaljeni strani 
 - Nginx Proxy Manager ni povezan s HAM.
 - Vključitev HAM backupov v obstoječo centralno backup strategijo še ni potrjena.
 - Testni asset ID `1` ostaja v bazi kot jasno označen integracijski zapis, ker aplikacija še nima varnega endpointa za brisanje.
+
+## Faza 1.1 – varnostni deployment
+
+Pred buildom mora strežniški `.env` vsebovati naključno `HAM_SESSION_SECRET`; vrednost se ne izpisuje v `docker compose config` ali loge. Po migraciji `20260824_02` se uporabnik inicializira izključno z interaktivnim `docker compose exec ham python -m app.cli set-password`. HAM ostane na `127.0.0.1:8010`; Nginx Proxy Manager še ni vključen. Pred migracijo se preverijo backup, trenutna revizija in asset ID `1`.

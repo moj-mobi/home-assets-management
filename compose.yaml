@@ -8,6 +8,10 @@ services:
       - "${HAM_BIND_ADDRESS:-127.0.0.1}:${HAM_HOST_PORT:-8000}:8000"
     environment:
       HAM_DATA_DIR: /app/data
+      HAM_ENV: server
+      HAM_SESSION_SECRET: ${HAM_SESSION_SECRET:?HAM_SESSION_SECRET is required}
+      HAM_SECURE_COOKIES: ${HAM_SECURE_COOKIES:-false}
+      HAM_SESSION_MAX_AGE_SECONDS: ${HAM_SESSION_MAX_AGE_SECONDS:-1800}
     volumes:
       - ./data:/app/data
     healthcheck:
