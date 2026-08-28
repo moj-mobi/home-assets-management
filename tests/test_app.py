@@ -54,7 +54,7 @@ def test_existing_database_migrates_without_losing_asset(tmp_path, monkeypatch):
     command.upgrade(cfg, "head")
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT name FROM assets WHERE id=1").fetchone() == ("existing asset",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260826_04",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260828_05",)
 
 
 def test_manual_asset_and_separate_warranties(app_client):
@@ -115,6 +115,75 @@ def test_attachment_download_and_delete(app_client):
     assert 'id="attachment-viewer"' in detail.text and "dialog.showModal()" in detail.text
     assert client.post(f"/attachments/{attachment_id}/delete", data={"csrf_token": token}, follow_redirects=False).status_code == 303
     assert not (app.state.settings.data_dir / "attachments" / stored).exists()
+
+
+def test_mobile_inventory_photo_can_be_added_and_replaced(app_client):
+    app, client = app_client; login(client); token = csrf_from(client.get("/"))
+    client.post("/assets", data={"csrf_token": token, "name": "Sredstvo za inventuro"})
+    with app.state.session_factory() as db:
+        from app.models import Asset
+        asset_id = db.query(Asset.id).filter_by(name="Sredstvo za inventuro").scalar()
+    detail = client.get(f"/assets/{asset_id}")
+    assert 'capture="environment"' in detail.text and "Dodaj ali zamenjaj sliko" in detail.text
+    first = b"\x89PNG\r\n\x1a\n" + b"first-photo"
+    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token}, files={"photo": ("first.png", first, "image/png")}, follow_redirects=False)
+    assert response.status_code == 303 and "photo=added" in response.headers["location"]
+    with app.state.session_factory() as db:
+        from app.models import Asset
+        asset = db.get(Asset, asset_id); old = asset.attachments[0]; old_id, old_path = old.id, app.state.settings.data_dir / "attachments" / old.stored_name
+    second = b"\x89PNG\r\n\x1a\n" + b"replacement-photo"
+    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token, "replace_attachment_id": str(old_id)}, files={"photo": ("new.png", second, "image/png")}, follow_redirects=False)
+    assert response.status_code == 303 and "photo=replaced" in response.headers["location"]
+    with app.state.session_factory() as db:
+        from app.models import Asset
+        asset = db.get(Asset, asset_id)
+        assert len(asset.attachments) == 1 and asset.attachments[0].original_name == "new.png"
+    assert not old_path.exists()
+
+
+def test_duplicate_merge_preserves_data_attachments_and_audit_link(app_client):
+    app, client = app_client; login(client); token = csrf_from(client.get("/"))
+    from app.models import Asset, Attachment
+    with app.state.session_factory() as db:
+        target = Asset(name="Glavni računalnik", manufacturer="Acme", status="in_use")
+        source = Asset(name="Podvojeni računalnik", model="X1", serial_number="SN-42", status="in_use")
+        source.attachments.append(Attachment(original_name="slika.png", stored_name="merge-photo.png", document_type="photo", mime_type="image/png", size=8, confirmed=True))
+        db.add_all([target, source]); db.commit(); target_id, source_id = target.id, source.id
+        (app.state.settings.data_dir / "attachments" / "merge-photo.png").write_bytes(b"png-data")
+    review = client.get(f"/assets/merge?asset_id={target_id}&asset_id={source_id}")
+    assert review.status_code == 200 and "Združi podvojene vnose" in review.text
+    response = client.post("/assets/merge", data={"csrf_token": token, "asset_id": [str(target_id), str(source_id)], "target_id": str(target_id)}, follow_redirects=False)
+    assert response.status_code == 303 and f"/assets/{target_id}" in response.headers["location"]
+    with app.state.session_factory() as db:
+        target, source = db.get(Asset, target_id), db.get(Asset, source_id)
+        assert (target.model, target.serial_number, len(target.attachments)) == ("X1", "SN-42", 1)
+        assert source.archived_at is not None and source.merged_into_id == target_id and not source.attachments
+
+
+def test_composite_asset_groups_and_releases_components(app_client):
+    app, client = app_client; login(client); token = csrf_from(client.get("/"))
+    from app.models import Asset
+    with app.state.session_factory() as db:
+        disk, board = Asset(name="Disk", status="in_use"), Asset(name="Matična plošča", status="in_use")
+        db.add_all([disk, board]); db.commit(); disk_id, board_id = disk.id, board.id
+    review = client.get(f"/assets/group?asset_id={disk_id}&asset_id={board_id}")
+    assert review.status_code == 200 and "Ustvari sestavljeno sredstvo" in review.text
+    response = client.post("/assets/group", data={"csrf_token": token, "asset_id": [str(disk_id), str(board_id)], "name": "Delovni računalnik", "location": "Pisarna"}, follow_redirects=False)
+    assert response.status_code == 303
+    with app.state.session_factory() as db:
+        group = db.query(Asset).filter_by(name="Delovni računalnik").one(); group_id = group.id
+        assert group.is_group and {component.id for component in group.components} == {disk_id, board_id}
+    register = client.get("/assets")
+    assert "Delovni računalnik" in register.text and ">Disk<" not in register.text
+    detail = client.get(f"/assets/{group_id}")
+    assert "Komponente" in detail.text and "Matična plošča" in detail.text
+    assert client.post(f"/assets/{group_id}/components/{disk_id}/remove", data={"csrf_token": token}, follow_redirects=False).status_code == 303
+    with app.state.session_factory() as db: assert db.get(Asset, disk_id).parent_id is None
+
+
+def test_session_default_is_one_hour(app_client):
+    app, _ = app_client
+    assert app.state.settings.session_max_age_seconds == 3600
 
 
 def test_entry_and_register_are_separate(app_client):

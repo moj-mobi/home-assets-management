@@ -30,6 +30,7 @@ Thumbs.db
 /.agents/
 /.deploy/
 /.tmp-pytest-*/
+/.local-preview/
 /data/database/*
 /data/attachments/*
 /data/backups/*

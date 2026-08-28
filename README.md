@@ -74,9 +74,7 @@ Na Linuxu sta ustrezni poti `.venv/bin/...`. Teste zaženete z `pytest`.
 
 ## Dostop in varnostne meje MVP
 
-Compose vrata namenoma objavi le na `127.0.0.1`, zato aplikacija privzeto ni dostopna iz domačega omrežja ali interneta. Trenutni MVP še nima prijave in ga ne smete objaviti na `0.0.0.0`, v LAN ali internet.
-
-Pred dostopom iz drugih naprav je treba kot enoten varnostni sklop dodati: enouporabniško prijavo z varno zgoščenim geslom, skrivnosti iz `.env`, varne sejne piškotke, CSRF zaščito vseh obrazcev, omejitev dovoljenih gostiteljev in dokumentiran postopek ponastavitve gesla. Gesel, licenčnih ključev ali plačilnih podatkov se ne shranjuje v navadnem besedilu.
+Compose vrata privzeto objavi le na `127.0.0.1`, zato aplikacija brez izrecne nastavitve ni dostopna iz domačega omrežja ali interneta. HAM vključuje enouporabniško prijavo z Argon2id, strežniško preverljivo sejo, CSRF zaščito obrazcev in omejitev dovoljenih gostiteljev. Gesel, licenčnih ključev ali plačilnih podatkov se ne shranjuje v navadnem besedilu.
 
 Internetna objava ni del MVP. Za poznejši HTTPS je predviden reverse proxy (na primer Nginx) na istem Linux strežniku; dodan naj bo šele skupaj s preverjeno avtentikacijo, HTTPS certifikati in ustreznimi omrežnimi pravili.
 
@@ -92,6 +90,10 @@ Obrazec vodi ločeno evidenco zakonskega jamstva za skladnost in komercialne gar
 
 Ročni vnos je na `/assets/new`, upravljavska evidenca pa na `/assets`. Evidenca podpira iskanje, hitre filtre in razvrščanje po stolpcih, strežniško paginacijo ter mehko arhiviranje. Privzeto so najnovejši vnosi prikazani na vrhu. Arhiviranje ne izbriše sredstva ali prilog; revizija `20260826_04` doda ločen čas arhiviranja.
 
+V evidenci lahko izberete več sredstev. **Združi podvojene** ohrani izbrani glavni zapis, vanj dopolni manjkajoče podatke in priloge ter druge zapise revizijsko označi kot združene. **Ustvari sestavljeno sredstvo** ustvari virtualno nadrejeno sredstvo in izbrane zapise ohrani kot samostojne komponente. Privzeti pogled pokaže glavna sredstva; filter strukture omogoča tudi vse zapise, samo skupine ali samo komponente.
+
+Na podrobnostih obstoječega sredstva je razdelek **Fotografije sredstva**. Na telefonu lahko neposredno odprete kamero, dodate novo fotografijo ali izberete obstoječo fotografijo, ki jo nova nadomesti. Fotografije ostanejo povezane z evidenco in imajo vgrajen predogled.
+
 Račun v obliki PDF, JPG ali PNG lahko pred shranjevanjem lokalno predizpolni podatke. Besedilni PDF obdela `pypdf`; slike obdela `pytesseract` s slovenskimi in angleškimi podatki Tesseract OCR (oboje je vključeno v Docker sliko). Pri neposrednem razvojnem zagonu mora biti Tesseract z jezikoma `slv` in `eng` nameščen v sistemu; brez njega ostane varen ročni vnos. Omejitev velikosti določa `HAM_MAX_ATTACHMENT_BYTES` (privzeto 10 MiB). Aplikacija preveri dejanski podpis datoteke in uporablja naključno interno ime.
 
 Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop nastavite `GEMINI_API_KEY`; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.
@@ -106,7 +108,7 @@ V strežniški `.env` ustvarite najmanj 32 znakov dolgo naključno `HAM_SESSION_
 docker compose exec ham python -m app.cli set-password
 ```
 
-Ukaz interaktivno vpraša za uporabniško ime in dvakrat skrito geslo dolžine najmanj 12 znakov. Isti ukaz spremeni geslo in razveljavi obstoječo sejo. Prijava je na `/login`, odjava pa v glavi aplikacije. Po petih neuspehih je račun blokiran 15 minut; počakajte na iztek ali ponovno varno nastavite geslo prek CLI. Piškotki so pri lokalnem HTTP dostopu `HttpOnly` in `SameSite=Lax`; ob poznejšem HTTPS nastavite `HAM_SECURE_COOKIES=true`.
+Ukaz interaktivno vpraša za uporabniško ime in dvakrat skrito geslo dolžine najmanj 12 znakov. Isti ukaz spremeni geslo in razveljavi obstoječo sejo. Prijava je na `/login`, odjava pa v glavi aplikacije. Po petih neuspehih je račun blokiran 15 minut; počakajte na iztek ali ponovno varno nastavite geslo prek CLI. Piškotki so pri lokalnem HTTP dostopu `HttpOnly` in `SameSite=Lax`; seja privzeto poteče po 60 minutah neaktivnosti (`HAM_SESSION_MAX_AGE_SECONDS=3600`). Ob poznejšem HTTPS nastavite `HAM_SECURE_COOKIES=true`.
 
 Za LAN dostop nastavite HAM_BIND_ADDRESS na konkretni naslov strežnika in HAM_ALLOWED_HOSTS na dovoljene gostitelje. Ne uporabljajte .0.0.0; HTTP promet ni šifriran.
 

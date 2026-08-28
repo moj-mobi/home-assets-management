@@ -21,4 +21,8 @@
 - Potrjene fotografije so povezane s sredstvom; neuspešna analiza ne ustvari sredstva.
 - Gemini strukturirani odgovor se pravilno prebere iz trenutne ovojnice Interactions API.
 - Predogled priloge vrne `inline`, ločena pot za prenos pa `attachment`.
-- Celoten avtomatski sklop vsebuje 24 uspešnih testov.
+- Dodajanje in zamenjava fotografije obstoječega sredstva delujeta prek mobilnega obrazca; zamenjana neuporabljena datoteka se odstrani.
+- Združitev dopolni manjkajoče podatke glavnega sredstva, prenese priloge in arhivira izvor z `merged_into_id`.
+- Sestavljeno sredstvo ohrani komponente kot ločene zapise in omogoča njihovo odpenjanje.
+- Mobilni pogled pri širini 430 px nima vodoravnega preliva; izbira več sredstev in fotografiranje sta dosegljiva.
+- Celoten avtomatski sklop vsebuje 28 uspešnih testov.

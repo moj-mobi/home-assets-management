@@ -22,3 +22,11 @@ Mobilni čarovnik uporablja Google Gemini Interactions API z modelom `gemini-3.7
 ## ADR-006: Datoteke lokalno, predogled privzeto
 
 Izvirne priloge ostanejo na lokalnem podatkovnem nosilcu, v SQLite pa so metapodatki in povezave. Privzeti klik uporabi avtenticiran vgrajeni predogled z dispozicijo `inline`; prenos je ločena uporabniška odločitev. S tem ogled ne povzroči neželenega prenosa, izvirnik pa ostane dosegljiv.
+
+## ADR-007: Revizijska združitev in virtualna sestavljena sredstva
+
+Podvojeni zapisi se ne izbrišejo: izbrani glavni zapis se dopolni, izvori pa se mehko arhivirajo in povežejo z `merged_into_id`. Sestavljeno sredstvo je označeno z `is_group`, komponente pa imajo `parent_id`. Tako ostanejo njihove serijske številke, priloge in življenjski cikel neodvisni, uporabnik pa jih lahko upravlja kot celoto.
+
+## ADR-008: Drseča 60-minutna seja
+
+Veljavnost seje se ob aktivnosti podaljšuje in privzeto poteče po 3600 sekundah neaktivnosti. Nastavitev `HAM_SESSION_MAX_AGE_SECONDS` omogoča prilagoditev brez spremembe kode; odjava in sprememba gesla še vedno takoj razveljavita sejo.

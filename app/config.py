@@ -11,7 +11,7 @@ class Settings:
     session_secret: str
     environment: str = "development"
     secure_cookies: bool = False
-    session_max_age_seconds: int = 1800
+    session_max_age_seconds: int = 3600
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "testserver")
     app_name: str = "HAM"
     max_attachment_bytes: int = 10 * 1024 * 1024
@@ -34,7 +34,7 @@ class Settings:
             session_secret=session_secret,
             environment=environment,
             secure_cookies=os.getenv("HAM_SECURE_COOKIES", "false").lower() in {"1", "true", "yes"},
-            session_max_age_seconds=int(os.getenv("HAM_SESSION_MAX_AGE_SECONDS", "1800")),
+            session_max_age_seconds=int(os.getenv("HAM_SESSION_MAX_AGE_SECONDS", "3600")),
             allowed_hosts=tuple(h.strip() for h in os.getenv("HAM_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",") if h.strip()),
             max_attachment_bytes=int(os.getenv("HAM_MAX_ATTACHMENT_BYTES", str(10 * 1024 * 1024))),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),

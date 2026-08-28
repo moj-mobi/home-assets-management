@@ -6,7 +6,7 @@
 - Geslo je shranjeno samo kot Argon2id hash in nastavljeno interaktivno.
 - Brez inicializiranega uporabnika podatki niso dostopni.
 - Sejna skrivnost je obvezna v strežniškem načinu in ni v Git.
-- Neaktivna seja poteče po 30 minutah; odjava in sprememba gesla jo razveljavita.
+- Neaktivna seja privzeto poteče po 60 minutah; odjava in sprememba gesla jo razveljavita.
 - Po 5 zaporednih neuspehih je račun blokiran 15 minut.
 - Vsi spreminjajoči obrazci, vključno s HTMX in odjavo, zahtevajo CSRF token.
 - `/health` ostane javen in vrača samo `{"status":"ok"}`.
@@ -20,3 +20,6 @@
 - Potrditev čarovnika atomarno zapiše sredstvo in poveže vse fotografije.
 - Fotografije in PDF se primarno odprejo v vgrajenem predogledu; prenos je ločena možnost.
 - Gemini integracija je izbirna in ne razkrije API ključa v HTML, dnevnikih ali Git repozitoriju.
+- Obstoječemu sredstvu je mogoče s telefonom dodati fotografijo ali z njo zamenjati izbrano obstoječo fotografijo.
+- Uporabnik lahko izbere več podvojenih zapisov, določi glavni zapis in jih združi brez izgube prilog ali revizijske sledi.
+- Uporabnik lahko iz več komponent ustvari virtualno sestavljeno sredstvo ter komponente pozneje dodaja ali odstranjuje brez njihovega brisanja.

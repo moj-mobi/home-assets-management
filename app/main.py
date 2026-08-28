@@ -127,6 +127,20 @@ def cleanup_staged(db, settings):
     if staged: db.commit()
 
 
+def selected_asset_ids(values):
+    return list(dict.fromkeys(int(value) for value in values if str(value).isdigit()))
+
+
+MERGEABLE_FIELDS = (
+    "category", "manufacturer", "model", "serial_number", "purchase_condition",
+    "purchase_date", "received_date", "purchase_price", "currency", "seller",
+    "seller_type", "purchase_country", "product_url", "invoice_number", "order_number",
+    "location", "status", "conformity_months", "conformity_start", "conformity_end",
+    "conformity_source", "warranty_provider", "warranty_months", "warranty_start",
+    "warranty_end", "warranty_number", "warranty_terms_url", "warranty_notes",
+)
+
+
 async def store_upload(upload, document_type, settings, confirmed=False):
     content = await upload.read(settings.max_attachment_bytes + 1)
     if len(content) > settings.max_attachment_bytes: raise ValueError("Datoteka je prevelika.")
@@ -313,6 +327,10 @@ def create_app(settings=None):
         archive = p.get("archive", "active")
         if archive == "archived": query = query.where(Asset.archived_at.is_not(None))
         elif archive != "all": query = query.where(Asset.archived_at.is_(None))
+        structure = p.get("structure", "top")
+        if structure == "components": query = query.where(Asset.parent_id.is_not(None))
+        elif structure == "groups": query = query.where(Asset.is_group.is_(True))
+        elif structure != "all": query = query.where(Asset.parent_id.is_(None))
         invoice = p.get("invoice", "")
         if invoice == "yes": query = query.where(Asset.attachments.any(Attachment.document_type == "invoice"))
         elif invoice == "no": query = query.where(~Asset.attachments.any(Attachment.document_type == "invoice"))
@@ -334,17 +352,18 @@ def create_app(settings=None):
         pages = max(1, (total + per_page - 1) // per_page); page = min(max(1, int(p.get("page", "1")) if p.get("page", "1").isdigit() else 1), pages)
         assets = db.scalars(query.offset((page-1)*per_page).limit(per_page)).unique().all()
         facets = form_context(db)
-        filter_keys = ("name","category","manufacturer","serial","location","purchase_from","purchase_to","price_min","price_max","status","warranty","invoice","archive")
+        filter_keys = ("name","category","manufacturer","serial","location","purchase_from","purchase_to","price_min","price_max","status","warranty","invoice","archive","structure")
         filter_value_labels = {
             "status": STATUS_LABELS,
             "warranty": {"active": "Veljavna garancija", "expired": "Potekla garancija", "none": "Brez evidentirane garancije"},
             "invoice": {"yes": "Z računom", "no": "Brez računa"},
             "archive": {"archived": "Samo arhivirana", "all": "Aktivna in arhivirana"},
+            "structure": {"all": "Vsi zapisi", "components": "Samo komponente", "groups": "Samo sestavljena sredstva"},
         }
         active_filters = [
             (key, p.get(key), filter_value_labels.get(key, {}).get(p.get(key), p.get(key)))
             for key in filter_keys
-            if p.get(key) and not (key == "archive" and p.get(key) == "active")
+            if p.get(key) and not (key == "archive" and p.get(key) == "active") and not (key == "structure" and p.get(key) == "top")
         ]
         start_item = (page-1)*per_page+1 if total else 0; end_item = min(page*per_page, total)
         return templates.TemplateResponse(request, "assets.html", {"assets": assets, "csrf_token": ensure_csrf(request), "params": p, "page": page, "pages": pages, "total": total, "per_page": per_page, "sort": sort, "direction": direction, "active_filters": active_filters, "start_item": start_item, "end_item": end_item, **facets})
@@ -429,6 +448,65 @@ def create_app(settings=None):
         if root in path.parents: path.unlink(missing_ok=True)
         return HTMLResponse("")
 
+    @app.get("/assets/merge", response_class=HTMLResponse)
+    def merge_assets_review(request: Request, db: Session = Depends(get_db)):
+        ids = selected_asset_ids(request.query_params.getlist("asset_id"))
+        assets = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None)).order_by(Asset.id)).all() if ids else []
+        if len(assets) < 2 or any(asset.is_group for asset in assets):
+            return RedirectResponse("/assets?selection_error=merge", status_code=303)
+        return templates.TemplateResponse(request, "asset_merge.html", {"assets": assets, "csrf_token": ensure_csrf(request)})
+
+    @app.post("/assets/merge")
+    async def merge_assets(request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        ids = selected_asset_ids(form.getlist("asset_id"))
+        target_id = int(form.get("target_id")) if str(form.get("target_id", "")).isdigit() else 0
+        assets = db.scalars(select(Asset).options(selectinload(Asset.attachments), selectinload(Asset.components)).where(Asset.id.in_(ids), Asset.archived_at.is_(None))).unique().all() if ids else []
+        if len(assets) < 2 or target_id not in ids or any(asset.is_group for asset in assets):
+            return HTMLResponse("Izberite najmanj dve navadni sredstvi in glavni zapis.", status_code=422)
+        target = next(asset for asset in assets if asset.id == target_id)
+        sources = [asset for asset in assets if asset.id != target_id]
+        attachment_ids = {attachment.id for attachment in target.attachments}
+        provenance = []
+        for source in sources:
+            for field in MERGEABLE_FIELDS:
+                if getattr(target, field) in (None, "") and getattr(source, field) not in (None, ""):
+                    setattr(target, field, getattr(source, field))
+            for attachment in list(source.attachments):
+                if attachment.id not in attachment_ids:
+                    target.attachments.append(attachment); attachment_ids.add(attachment.id)
+                source.attachments.remove(attachment)
+            for component in list(source.components): component.parent = target
+            if source.notes and source.notes.strip() and source.notes.strip() != (target.notes or "").strip():
+                provenance.append(f"Opombe iz zapisa {source.name}: {source.notes.strip()}")
+            provenance.append(f"Združen zapis #{source.id}: {source.name}")
+            source.parent = None; source.merged_into = target; source.archived_at = datetime.now()
+        if provenance:
+            target.notes = "\n\n".join(part for part in [target.notes, *provenance] if part)
+        db.commit()
+        return RedirectResponse(f"/assets/{target.id}?merged={len(sources)}", status_code=303)
+
+    @app.get("/assets/group", response_class=HTMLResponse)
+    def group_assets_review(request: Request, db: Session = Depends(get_db)):
+        ids = selected_asset_ids(request.query_params.getlist("asset_id"))
+        assets = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None), Asset.is_group.is_(False)).order_by(Asset.name)).all() if ids else []
+        if len(assets) < 2: return RedirectResponse("/assets?selection_error=group", status_code=303)
+        return templates.TemplateResponse(request, "asset_group.html", {"assets": assets, "csrf_token": ensure_csrf(request), **form_context(db)})
+
+    @app.post("/assets/group")
+    async def group_assets(request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        ids = selected_asset_ids(form.getlist("asset_id")); name = (form.get("name") or "").strip()
+        assets = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None), Asset.is_group.is_(False))).all() if ids else []
+        if len(assets) < 2 or not name: return HTMLResponse("Vnesite naziv in izberite najmanj dve komponenti.", status_code=422)
+        group = Asset(name=name[:200], category=(form.get("category") or "Sestavljeno sredstvo").strip()[:100], location=(form.get("location") or "").strip() or None, status="in_use", is_group=True, notes=(form.get("notes") or "").strip() or None)
+        db.add(group); db.flush()
+        for asset in assets: asset.parent = group
+        db.commit()
+        return RedirectResponse(f"/assets/{group.id}?grouped={len(assets)}", status_code=303)
+
     @app.post("/assets/{asset_id}/archive")
     def archive_asset(asset_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
         if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
@@ -447,9 +525,10 @@ def create_app(settings=None):
 
     @app.get("/assets/{asset_id}", response_class=HTMLResponse)
     def asset_detail(asset_id: int, request: Request, db: Session = Depends(get_db)):
-        asset = db.scalar(select(Asset).options(selectinload(Asset.attachments)).where(Asset.id == asset_id))
+        asset = db.scalar(select(Asset).options(selectinload(Asset.attachments), selectinload(Asset.components), selectinload(Asset.parent), selectinload(Asset.merged_into)).where(Asset.id == asset_id))
         if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
-        return templates.TemplateResponse(request, "asset_detail.html", {"asset": asset, "csrf_token": ensure_csrf(request)})
+        available_components = db.scalars(select(Asset).where(Asset.archived_at.is_(None), Asset.is_group.is_(False), Asset.parent_id.is_(None), Asset.id != asset.id).order_by(Asset.name)).all() if asset.is_group else []
+        return templates.TemplateResponse(request, "asset_detail.html", {"asset": asset, "available_components": available_components, "csrf_token": ensure_csrf(request)})
 
     @app.get("/assets/{asset_id}/edit", response_class=HTMLResponse)
     def asset_edit(asset_id: int, request: Request, db: Session = Depends(get_db)):
@@ -467,6 +546,24 @@ def create_app(settings=None):
         except (ValueError, InvalidOperation): return HTMLResponse("Neveljavni podatki.", status_code=422)
         db.commit(); return RedirectResponse(f"/assets/{asset.id}", status_code=303)
 
+    @app.post("/assets/{group_id}/components")
+    async def add_group_components(group_id: int, request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        group = db.get(Asset, group_id); ids = selected_asset_ids(form.getlist("component_id"))
+        if not group or not group.is_group: return HTMLResponse("Sestavljeno sredstvo ne obstaja.", status_code=404)
+        components = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None), Asset.is_group.is_(False), Asset.id != group.id)).all() if ids else []
+        if not components: return HTMLResponse("Izberite najmanj eno komponento.", status_code=422)
+        for component in components: component.parent = group
+        db.commit(); return RedirectResponse(f"/assets/{group.id}", status_code=303)
+
+    @app.post("/assets/{group_id}/components/{component_id}/remove")
+    def remove_group_component(group_id: int, component_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        component = db.get(Asset, component_id)
+        if not component or component.parent_id != group_id: return HTMLResponse("Komponenta ne obstaja v tem sestavljenem sredstvu.", status_code=404)
+        component.parent = None; db.commit(); return RedirectResponse(f"/assets/{group_id}", status_code=303)
+
     @app.post("/assets/{asset_id}/attachments")
     async def add_attachment(asset_id: int, request: Request, document: UploadFile = File(...), document_type: str = Form("other"), csrf_token: str = Form(""), db: Session = Depends(get_db)):
         if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
@@ -480,6 +577,27 @@ def create_app(settings=None):
         attachment = Attachment(original_name=Path(document.filename or "document").name[:255], stored_name=stored_name, document_type=document_type if document_type in DOCUMENT_TYPES else "other", mime_type=mime, size=len(content), confirmed=True)
         asset.attachments.append(attachment); db.commit()
         return RedirectResponse(f"/assets/{asset_id}", status_code=303)
+
+    @app.post("/assets/{asset_id}/photos")
+    async def add_or_replace_asset_photo(asset_id: int, request: Request, photo: UploadFile = File(...), replace_attachment_id: str = Form(""), csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        asset = db.scalar(select(Asset).options(selectinload(Asset.attachments)).where(Asset.id == asset_id))
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        try: new_photo = await store_upload(photo, "photo", settings, confirmed=True)
+        except ValueError as exc: return HTMLResponse(str(exc), status_code=415)
+        old_photo = None; remove_old_file = False
+        if replace_attachment_id.isdigit():
+            candidate = db.get(Attachment, int(replace_attachment_id))
+            if candidate and candidate.document_type == "photo" and candidate in asset.attachments:
+                old_photo = candidate; remove_old_file = len(candidate.assets) <= 1
+                asset.attachments.remove(candidate)
+        asset.attachments.append(new_photo)
+        if old_photo and remove_old_file: db.delete(old_photo)
+        db.commit()
+        if old_photo and remove_old_file:
+            path = (settings.data_dir / "attachments" / old_photo.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
+            if root in path.parents: path.unlink(missing_ok=True)
+        return RedirectResponse(f"/assets/{asset_id}?photo={'replaced' if old_photo else 'added'}", status_code=303)
 
     @app.get("/attachments/{attachment_id}")
     def preview_attachment(attachment_id: int, db: Session = Depends(get_db)):

@@ -50,7 +50,13 @@ class Asset(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+    is_group: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), index=True)
+    merged_into_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), index=True)
     attachments: Mapped[list["Attachment"]] = relationship(secondary=asset_attachments, back_populates="assets")
+    parent: Mapped["Asset | None"] = relationship(remote_side="Asset.id", foreign_keys=[parent_id], back_populates="components")
+    components: Mapped[list["Asset"]] = relationship(foreign_keys=[parent_id], back_populates="parent")
+    merged_into: Mapped["Asset | None"] = relationship(remote_side="Asset.id", foreign_keys=[merged_into_id])
 
 
 class Attachment(Base):

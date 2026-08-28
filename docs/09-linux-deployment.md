@@ -128,3 +128,9 @@ Dne 24. avgusta 2026 je bila gostiteljska Docker vezava omejena z `0.0.0.0:8010`
 Na testni strežnik so bili objavljeni razširjena evidenca in obrazec sredstva, hitri filtri in sortiranje, odzivne mobilne kartice, mobilni fotografski čarovnik, Gemini Interactions API, trajna hramba fotografij ter vgrajeni predogled slik in PDF. Privzeti pogled evidence je `created_at DESC`.
 
 Strežniški `.env` dodatno vsebuje `GEMINI_API_KEY`, `HAM_GEMINI_MODEL=gemini-3.7-flash` in po potrebi `HAM_MAX_ATTACHMENT_BYTES`. Dejanske vrednosti skrivnosti se ne zapisujejo v dokumentacijo ali Git. Pred vsako objavo je bila izdelana SQLite varnostna kopija v `data/backups/`; po zadnji objavi je bil vsebnik `healthy`. Lokalni regresijski sklop je zaključil z 24 uspešnimi testi.
+
+## Dopolnitev 28. avgusta 2026 — upravljanje inventarja
+
+Različica dodaja 60-minutno drsečo sejo, mobilno dodajanje oziroma zamenjavo fotografije obstoječega sredstva, varno združevanje podvojenih evidenčnih zapisov ter virtualna sestavljena sredstva s komponentami. Migracija `20260828_05` doda `is_group`, `parent_id` in `merged_into_id`. Strežniška nastavitev je `HAM_SESSION_MAX_AGE_SECONDS=3600`.
+
+Pred objavo je treba izdelati kopijo aktivne SQLite baze, nato zgraditi vsebnik, preveriti Alembic `20260828_05`, health endpoint, ohranitev obstoječih sredstev ter vrednost sejne nastavitve brez izpisa drugih skrivnosti. Lokalni regresijski sklop vsebuje 28 testov; mobilni pogled je preverjen pri 430 × 932 px brez vodoravnega preliva.
