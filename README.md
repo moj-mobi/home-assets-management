@@ -1,10 +1,44 @@
 # HAM — Home Assets Management
 
+![HAM — Home Assets Management: namizna evidenca, mobilni AI čarovnik in QR nalepke](assets/ham-repository-hero.png)
+
 HAM je lokalno gostovana spletna aplikacija za evidenco domačega premoženja. Uporablja Python 3.13, FastAPI, SQLAlchemy 2, Alembic, SQLite, Jinja2 in HTMX. Uporabniški vmesnik je strežniško izrisan in ne potrebuje Node.js. Osnovno upravljanje deluje lokalno; izbirni mobilni čarovnik za prepoznavo fotografij uporablja Google Gemini API.
+
+**Za posameznike, gospodinjstva in manjše ekipe**, ki želijo imeti naprave, račune, fotografije, jamstva, inventarne številke in QR nalepke urejene na lastnem strežniku.
+
+- odzivna evidenca sredstev z iskanjem, filtri, sortiranjem in sestavljenimi sredstvi;
+- mobilni zajem treh fotografij in AI-predizpolnitev podatkov;
+- dokumenti, fotografije, jamstva in vgrajeni predogled;
+- inventarne številke, QR kode in predloge za tiskalnike NIIMBOT;
+- lokalna prijava, Argon2id in podatki pod vašim nadzorom.
 
 > **AI-generated / AI-assisted:** projekt je bil razvit z obsežno pomočjo generativne umetne inteligence pod človeškim vodenjem in pregledom. Pred produkcijsko uporabo preverite kodo, varnost in ustreznost za svoj namen. Podrobnosti so v [AI-GENERATED.md](AI-GENERATED.md).
 
 Licenca: [MIT](LICENSE), Copyright © 2026 Moj-Mobi.
+
+## Pregled aplikacije
+
+### Evidenca in upravljanje
+
+| Evidenca sredstev | Uporabniški račun |
+|---|---|
+| [![Tabela evidence sredstev z izbiro, združevanjem in sestavljenimi sredstvi](assets/asset-inventory-desktop.png)](assets/asset-inventory-desktop.png) | [![Varno urejanje uporabniškega imena in zamenjava gesla](assets/user-account-desktop.png)](assets/user-account-desktop.png) |
+
+### AI-zajem, fotografije in označevanje
+
+| Mobilni čarovnik na namizju | QR nalepke in fotografije |
+|---|---|
+| [![Čarovnik za zajem sredstva, serijske številke in nalepke](assets/ai-scan-wizard-desktop.png)](assets/ai-scan-wizard-desktop.png) | [![Priprava QR nalepke NIIMBOT in evidenca fotografij](assets/qr-label-and-photos-desktop.png)](assets/qr-label-and-photos-desktop.png) |
+
+### Uporaba na telefonu
+
+Kliknite sliko za prikaz v polni velikosti.
+
+<p align="center">
+  <a href="assets/ai-scan-wizard-mobile.png"><img src="assets/ai-scan-wizard-mobile.png" alt="Odzivni mobilni čarovnik za fotografiranje sredstva" height="520"></a>
+  &nbsp;&nbsp;
+  <a href="assets/asset-photo-mobile.png"><img src="assets/asset-photo-mobile.png" alt="Fotografiranje ali izbira fotografije obstoječega sredstva na telefonu" height="520"></a>
+</p>
 
 ## Hiter zagon z Dockerjem
 
