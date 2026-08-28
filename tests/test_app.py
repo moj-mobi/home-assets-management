@@ -124,15 +124,16 @@ def test_mobile_inventory_photo_can_be_added_and_replaced(app_client):
         from app.models import Asset
         asset_id = db.query(Asset.id).filter_by(name="Sredstvo za inventuro").scalar()
     detail = client.get(f"/assets/{asset_id}")
-    assert 'capture="environment"' in detail.text and "Dodaj ali zamenjaj sliko" in detail.text
+    assert 'name="camera_photo"' in detail.text and 'capture="environment"' in detail.text
+    assert 'name="gallery_photo"' in detail.text and "Fotografiraj zdaj" in detail.text and "Dodaj ali zamenjaj sliko" in detail.text
     first = b"\x89PNG\r\n\x1a\n" + b"first-photo"
-    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token}, files={"photo": ("first.png", first, "image/png")}, follow_redirects=False)
+    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token}, files={"camera_photo": ("first.png", first, "image/png")}, follow_redirects=False)
     assert response.status_code == 303 and "photo=added" in response.headers["location"]
     with app.state.session_factory() as db:
         from app.models import Asset
         asset = db.get(Asset, asset_id); old = asset.attachments[0]; old_id, old_path = old.id, app.state.settings.data_dir / "attachments" / old.stored_name
     second = b"\x89PNG\r\n\x1a\n" + b"replacement-photo"
-    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token, "replace_attachment_id": str(old_id)}, files={"photo": ("new.png", second, "image/png")}, follow_redirects=False)
+    response = client.post(f"/assets/{asset_id}/photos", data={"csrf_token": token, "replace_attachment_id": str(old_id)}, files={"gallery_photo": ("new.png", second, "image/png")}, follow_redirects=False)
     assert response.status_code == 303 and "photo=replaced" in response.headers["location"]
     with app.state.session_factory() as db:
         from app.models import Asset

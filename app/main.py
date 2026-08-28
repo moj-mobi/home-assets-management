@@ -579,11 +579,13 @@ def create_app(settings=None):
         return RedirectResponse(f"/assets/{asset_id}", status_code=303)
 
     @app.post("/assets/{asset_id}/photos")
-    async def add_or_replace_asset_photo(asset_id: int, request: Request, photo: UploadFile = File(...), replace_attachment_id: str = Form(""), csrf_token: str = Form(""), db: Session = Depends(get_db)):
+    async def add_or_replace_asset_photo(asset_id: int, request: Request, photo: UploadFile | None = File(None), camera_photo: UploadFile | None = File(None), gallery_photo: UploadFile | None = File(None), replace_attachment_id: str = Form(""), csrf_token: str = Form(""), db: Session = Depends(get_db)):
         if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
         asset = db.scalar(select(Asset).options(selectinload(Asset.attachments)).where(Asset.id == asset_id))
         if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
-        try: new_photo = await store_upload(photo, "photo", settings, confirmed=True)
+        selected_photo = next((upload for upload in (camera_photo, gallery_photo, photo) if upload and upload.filename), None)
+        if not selected_photo: return HTMLResponse("Najprej fotografirajte sredstvo ali izberite sliko iz galerije.", status_code=422)
+        try: new_photo = await store_upload(selected_photo, "photo", settings, confirmed=True)
         except ValueError as exc: return HTMLResponse(str(exc), status_code=415)
         old_photo = None; remove_old_file = False
         if replace_attachment_id.isdigit():
