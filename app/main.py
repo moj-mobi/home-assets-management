@@ -19,6 +19,7 @@ from app.config import Settings
 from app.db import build_engine, build_session_factory, session_dependency
 from app.models import Asset, Attachment, LocalUser
 from app.invoice_extraction import LocalInvoiceExtractor
+from app.labels import LABEL_SIZES, PRINTERS, label_png, qr_png
 from app.asset_ai import GeminiVisionAnalyzer
 from app.security import DUMMY_HASH, MAX_FAILED_LOGINS, constant_time_equal, hash_session_id, lockout_deadline, logger, new_csrf_token, new_session_id, utcnow, verify_password
 
@@ -26,6 +27,12 @@ BASE_DIR = Path(__file__).resolve().parent
 CONDITIONS = {"new", "used", "refurbished", "unknown"}
 STATUSES = {"in_use", "loaned", "service", "sold", "gifted", "destroyed", "stored"}
 DOCUMENT_TYPES = {"invoice", "warranty", "photo", "manual", "service", "other"}
+
+
+def assign_inventory_number(db: Session, asset: Asset):
+    if asset.inventory_number: return
+    db.flush()
+    asset.inventory_number = f"HAM-{asset.id:06d}"
 
 
 def optional_date(value):
@@ -313,7 +320,7 @@ def create_app(settings=None):
         p = request.query_params; query = select(Asset).options(selectinload(Asset.attachments))
         term = p.get("q", "").strip()
         if term:
-            like = f"%{term}%"; query = query.where(or_(*[getattr(Asset, f).ilike(like) for f in ("name", "manufacturer", "model", "serial_number", "category", "seller", "location")]))
+            like = f"%{term}%"; query = query.where(or_(*[getattr(Asset, f).ilike(like) for f in ("name", "inventory_number", "manufacturer", "model", "serial_number", "category", "seller", "location")]))
         for param, field in (("name","name"),("serial","serial_number")):
             if p.get(param): query = query.where(getattr(Asset, field).ilike(f"%{p[param].strip()}%"))
         for param, field in (("category","category"),("manufacturer","manufacturer"),("location","location"),("status","status")):
@@ -398,6 +405,7 @@ def create_app(settings=None):
             return templates.TemplateResponse(request, "asset_form.html", {"error": str(exc), "csrf_token": ensure_csrf(request), **form_context(db)}, status_code=422)
         asset.attachments.extend(new_attachments)
         db.add(asset)
+        assign_inventory_number(db, asset)
         db.commit()
         db.refresh(asset)
         if request.headers.get("HX-Request") == "true": return templates.TemplateResponse(request, "asset_row.html", {"asset": asset})
@@ -432,7 +440,7 @@ def create_app(settings=None):
                     asset.conformity_months, asset.conformity_source, asset.conformity_start = 24, "default", asset.purchase_date
                     asset.conformity_end = add_months(asset.purchase_date, 24)
                     if asset.warranty_months: asset.warranty_start, asset.warranty_end = asset.purchase_date, add_months(asset.purchase_date, asset.warranty_months)
-                asset.attachments.append(attachment); db.add(asset); created.append(asset)
+                asset.attachments.append(attachment); db.add(asset); assign_inventory_number(db, asset); created.append(asset)
         except (ValueError, InvalidOperation): return HTMLResponse("Preverite datum, ceno in trajanje.", status_code=422)
         if not created: return HTMLResponse("Izbrane postavke nimajo naziva.", status_code=422)
         attachment.confirmed = True; db.commit()
@@ -502,7 +510,7 @@ def create_app(settings=None):
         assets = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None), Asset.is_group.is_(False))).all() if ids else []
         if len(assets) < 2 or not name: return HTMLResponse("Vnesite naziv in izberite najmanj dve komponenti.", status_code=422)
         group = Asset(name=name[:200], category=(form.get("category") or "Sestavljeno sredstvo").strip()[:100], location=(form.get("location") or "").strip() or None, status="in_use", is_group=True, notes=(form.get("notes") or "").strip() or None)
-        db.add(group); db.flush()
+        db.add(group); assign_inventory_number(db, group)
         for asset in assets: asset.parent = group
         db.commit()
         return RedirectResponse(f"/assets/{group.id}?grouped={len(assets)}", status_code=303)
@@ -600,6 +608,23 @@ def create_app(settings=None):
             path = (settings.data_dir / "attachments" / old_photo.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
             if root in path.parents: path.unlink(missing_ok=True)
         return RedirectResponse(f"/assets/{asset_id}?photo={'replaced' if old_photo else 'added'}", status_code=303)
+
+    @app.get("/assets/{asset_id}/qr.png")
+    def asset_qr(asset_id: int, db: Session = Depends(get_db)):
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        if not asset.inventory_number: assign_inventory_number(db, asset); db.commit()
+        return Response(qr_png(asset.name, asset.inventory_number), media_type="image/png", headers={"Content-Disposition": f'inline; filename="{asset.inventory_number}-qr.png"'})
+
+    @app.get("/assets/{asset_id}/label.png")
+    def asset_label(asset_id: int, printer: str = "b21pro", size: str = "50x30", db: Session = Depends(get_db)):
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        if printer not in PRINTERS or size not in LABEL_SIZES: return HTMLResponse("Neveljavna predloga nalepke.", status_code=422)
+        if not asset.inventory_number: assign_inventory_number(db, asset); db.commit()
+        content = label_png(asset.name, asset.inventory_number, printer, size)
+        filename = f"{asset.inventory_number}-{printer}-{size}.png"
+        return Response(content, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     @app.get("/attachments/{attachment_id}")
     def preview_attachment(attachment_id: int, db: Session = Depends(get_db)):

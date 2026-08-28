@@ -6,6 +6,8 @@ HAM je monolitna FastAPI aplikacija s strežniško izrisanim Jinja2/HTMX vmesnik
 
 Model `Asset` hrani opisne, nakupne, jamstvene in arhivske podatke. Samoreferenčni `parent_id` poveže komponente z virtualnim sestavljenim sredstvom, `merged_into_id` pa ohrani sled združitve podvojenega zapisa. `Attachment` hrani metapodatke, dejanska vsebina pa je pod naključnim internim imenom v `data/attachments/`. Povezovalna tabela omogoča, da je ena potrjena priloga povezana z enim ali več sredstvi. Začasne, nepotrjene priloge se po 24 urah počistijo.
 
+`inventory_number` je unikatna stabilna oznaka, izdelana iz primarnega ključa v obliki `HAM-NNNNNN`. QR in NIIMBOT PNG nalepke se generirajo na zahtevo in se ne shranjujejo v bazo. QR vsebina je človeku berljiv naziv in inventarna številka; tiskalna slika upošteva izbrano fizično velikost in ločljivost modela.
+
 Pot `/attachments/{id}` je namenjena avtenticiranemu vgrajenemu predogledu in vrne `Content-Disposition: inline`; `/attachments/{id}/download` je izrecna možnost prenosa. Brisanje ostaja CSRF-zaščiteno.
 
 ## Zajem in prepoznava

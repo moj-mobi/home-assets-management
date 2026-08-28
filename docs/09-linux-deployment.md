@@ -134,3 +134,5 @@ Strežniški `.env` dodatno vsebuje `GEMINI_API_KEY`, `HAM_GEMINI_MODEL=gemini-3
 Različica dodaja 60-minutno drsečo sejo, mobilno dodajanje oziroma zamenjavo fotografije obstoječega sredstva, varno združevanje podvojenih evidenčnih zapisov ter virtualna sestavljena sredstva s komponentami. Migracija `20260828_05` doda `is_group`, `parent_id` in `merged_into_id`. Strežniška nastavitev je `HAM_SESSION_MAX_AGE_SECONDS=3600`.
 
 Pred objavo je treba izdelati kopijo aktivne SQLite baze, nato zgraditi vsebnik, preveriti Alembic `20260828_05`, health endpoint, ohranitev obstoječih sredstev ter vrednost sejne nastavitve brez izpisa drugih skrivnosti. Lokalni regresijski sklop vsebuje 28 testov; mobilni pogled je preverjen pri 430 × 932 px brez vodoravnega preliva.
+
+Migracija `20260828_06` je dodala unikatne inventarne številke in jih dodelila vsem obstoječim zapisom. Različica generira QR kode in PNG predloge za NIIMBOT B21, B21 Pro ter M2. Pred objavo je bila ustvarjena kopija `ham-20260828-200823.db`; po migraciji je bil vsebnik `healthy`, Alembic je bil na `20260828_06` in health je vrnil `OK`. Regresijski sklop vsebuje 29 testov.

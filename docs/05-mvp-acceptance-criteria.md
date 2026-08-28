@@ -25,4 +25,6 @@
 - Združitev dopolni manjkajoče podatke glavnega sredstva, prenese priloge in arhivira izvor z `merged_into_id`.
 - Sestavljeno sredstvo ohrani komponente kot ločene zapise in omogoča njihovo odpenjanje.
 - Mobilni pogled pri širini 430 px nima vodoravnega preliva; izbira več sredstev in fotografiranje sta dosegljiva.
-- Celoten avtomatski sklop vsebuje 28 uspešnih testov.
+- Novo in migrirano sredstvo ima unikatno inventarno številko oblike `HAM-NNNNNN`.
+- QR PNG vsebuje naziv in inventarno številko, predloga nalepke pa se izdela pri pravilni pikselni velikosti za izbrani NIIMBOT model in fizično velikost.
+- Celoten avtomatski sklop vsebuje 29 uspešnih testov.

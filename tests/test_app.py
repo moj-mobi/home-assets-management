@@ -54,7 +54,8 @@ def test_existing_database_migrates_without_losing_asset(tmp_path, monkeypatch):
     command.upgrade(cfg, "head")
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT name FROM assets WHERE id=1").fetchone() == ("existing asset",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260828_05",)
+        assert db.execute("SELECT inventory_number FROM assets WHERE id=1").fetchone() == ("HAM-000001",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260828_06",)
 
 
 def test_manual_asset_and_separate_warranties(app_client):
@@ -140,6 +141,26 @@ def test_mobile_inventory_photo_can_be_added_and_replaced(app_client):
         asset = db.get(Asset, asset_id)
         assert len(asset.attachments) == 1 and asset.attachments[0].original_name == "new.png"
     assert not old_path.exists()
+
+
+def test_inventory_number_qr_and_niimbot_label(app_client):
+    from io import BytesIO
+    from PIL import Image
+    app, client = app_client; login(client); token = csrf_from(client.get("/"))
+    client.post("/assets", data={"csrf_token": token, "name": "Asus Creator"})
+    with app.state.session_factory() as db:
+        from app.models import Asset
+        asset = db.query(Asset).filter_by(name="Asus Creator").one()
+        asset_id, inventory_number = asset.id, asset.inventory_number
+    assert inventory_number == f"HAM-{asset_id:06d}"
+    detail = client.get(f"/assets/{asset_id}")
+    assert inventory_number in detail.text and "NIIMBOT B21" in detail.text and "NIIMBOT M2" in detail.text
+    qr = client.get(f"/assets/{asset_id}/qr.png")
+    assert qr.status_code == 200 and qr.headers["content-type"] == "image/png" and qr.content.startswith(b"\x89PNG")
+    label = client.get(f"/assets/{asset_id}/label.png?printer=b21pro&size=50x30")
+    assert label.status_code == 200 and label.headers["content-disposition"].startswith("attachment")
+    with Image.open(BytesIO(label.content)) as image:
+        assert image.size == (591, 354)
 
 
 def test_duplicate_merge_preserves_data_attachments_and_audit_link(app_client):

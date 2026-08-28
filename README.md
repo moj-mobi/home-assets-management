@@ -94,6 +94,8 @@ V evidenci lahko izberete več sredstev. **Združi podvojene** ohrani izbrani gl
 
 Na podrobnostih obstoječega sredstva je razdelek **Fotografije sredstva**. Na telefonu lahko neposredno odprete kamero, dodate novo fotografijo ali izberete obstoječo fotografijo, ki jo nova nadomesti. Fotografije ostanejo povezane z evidenco in imajo vgrajen predogled.
 
+Vsako novo sredstvo samodejno dobi unikatno inventarno številko oblike `HAM-000001`; migracija jo dodeli tudi obstoječim zapisom. Podrobnosti sredstva prikažejo QR kodo z nazivom in inventarno številko. HAM lahko pripravi črno-belo PNG nalepko velikosti 50 × 30, 40 × 30 ali 50 × 20 mm za NIIMBOT B21 (203 dpi), B21 Pro (300 dpi) ali M2 (300 dpi). PNG uvozite v aplikacijo NIIMBOT in tiskajte v merilu 100 %.
+
 Račun v obliki PDF, JPG ali PNG lahko pred shranjevanjem lokalno predizpolni podatke. Besedilni PDF obdela `pypdf`; slike obdela `pytesseract` s slovenskimi in angleškimi podatki Tesseract OCR (oboje je vključeno v Docker sliko). Pri neposrednem razvojnem zagonu mora biti Tesseract z jezikoma `slv` in `eng` nameščen v sistemu; brez njega ostane varen ročni vnos. Omejitev velikosti določa `HAM_MAX_ATTACHMENT_BYTES` (privzeto 10 MiB). Aplikacija preveri dejanski podpis datoteke in uporablja naključno interno ime.
 
 Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop nastavite `GEMINI_API_KEY`; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.

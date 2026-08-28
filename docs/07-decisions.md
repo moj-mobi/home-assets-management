@@ -30,3 +30,7 @@ Podvojeni zapisi se ne izbrišejo: izbrani glavni zapis se dopolni, izvori pa se
 ## ADR-008: Drseča 60-minutna seja
 
 Veljavnost seje se ob aktivnosti podaljšuje in privzeto poteče po 3600 sekundah neaktivnosti. Nastavitev `HAM_SESSION_MAX_AGE_SECONDS` omogoča prilagoditev brez spremembe kode; odjava in sprememba gesla še vedno takoj razveljavita sejo.
+
+## ADR-009: Stabilna inventarna številka in prenosljiva NIIMBOT predloga
+
+Inventarna številka uporablja stabilno obliko `HAM-NNNNNN`, vezano na notranji ID, in se po združevanju ali preimenovanju ne spremeni. QR nosi samo naziv in inventarno številko. Zaradi lastniškega Bluetooth postopka tiskalnikov HAM ne poskuša neposredno upravljati naprave iz brskalnika, temveč izdela PNG pravilne fizične velikosti in DPI za uvoz v uradno NIIMBOT aplikacijo.

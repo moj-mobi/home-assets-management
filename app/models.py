@@ -18,6 +18,7 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    inventory_number: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200), index=True)
     category: Mapped[str | None] = mapped_column(String(100))
     manufacturer: Mapped[str | None] = mapped_column(String(150))
