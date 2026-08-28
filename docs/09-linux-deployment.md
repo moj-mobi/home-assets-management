@@ -136,3 +136,9 @@ Različica dodaja 60-minutno drsečo sejo, mobilno dodajanje oziroma zamenjavo f
 Pred objavo je treba izdelati kopijo aktivne SQLite baze, nato zgraditi vsebnik, preveriti Alembic `20260828_05`, health endpoint, ohranitev obstoječih sredstev ter vrednost sejne nastavitve brez izpisa drugih skrivnosti. Lokalni regresijski sklop vsebuje 28 testov; mobilni pogled je preverjen pri 430 × 932 px brez vodoravnega preliva.
 
 Migracija `20260828_06` je dodala unikatne inventarne številke in jih dodelila vsem obstoječim zapisom. Različica generira QR kode in PNG predloge za NIIMBOT B21, B21 Pro ter M2. Pred objavo je bila ustvarjena kopija `ham-20260828-200823.db`; po migraciji je bil vsebnik `healthy`, Alembic je bil na `20260828_06` in health je vrnil `OK`. Regresijski sklop vsebuje 29 testov.
+
+## Dopolnitev 28. avgusta 2026 — uporabniški račun
+
+Različica dodaja odziven modul **Uporabniški račun** za spremembo uporabniškega imena in gesla. Spremembe zahtevajo trenutno geslo, novo geslo mora imeti najmanj 12 znakov, ob uspešni zamenjavi pa se seja zavrti in vse druge seje uporabnika razveljavijo. V bazi se nikoli ne hrani berljivo geslo, temveč samo Argon2id hash; varnostni dnevniki prav tako ne vsebujejo gesel ali hashov.
+
+Prvega uporabnika oziroma pozabljeno geslo skrbnik nastavi interaktivno z `docker compose exec ham python -m app.cli set-password`. Pred objavo je bila izdelana varnostna kopija `ham-20260828-203303.db`. Po ponovni gradnji je bil vsebnik `healthy`, health je vrnil `OK`, modul in povezava v mobilnem meniju pa sta bila preverjena. Sprememba ne zahteva nove migracije. Lokalni regresijski sklop vsebuje 30 uspešnih testov.

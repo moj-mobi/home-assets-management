@@ -116,6 +116,8 @@ docker compose exec ham python -m app.cli set-password
 
 Ukaz interaktivno vpraša za uporabniško ime in dvakrat skrito geslo dolžine najmanj 12 znakov. Isti ukaz spremeni geslo in razveljavi obstoječo sejo. Prijava je na `/login`, odjava pa v glavi aplikacije. Po petih neuspehih je račun blokiran 15 minut; počakajte na iztek ali ponovno varno nastavite geslo prek CLI. Piškotki so pri lokalnem HTTP dostopu `HttpOnly` in `SameSite=Lax`; seja privzeto poteče po 60 minutah neaktivnosti (`HAM_SESSION_MAX_AGE_SECONDS=3600`). Ob poznejšem HTTPS nastavite `HAM_SECURE_COOKIES=true`.
 
+V bazi ni gesla v čitljivi obliki. Tabela `local_users` vsebuje uporabniško ime, Argon2id zgoščeno vrednost gesla, stanje blokade in SHA-256 zgoščeni identifikator trenutno veljavne seje. Po prijavi je v hamburger meniju stran **Uporabniški račun**, kjer lahko uporabnik ob potrditvi s trenutnim geslom spremeni uporabniško ime ali geslo. Sprememba gesla razveljavi druge seje. Če je dostop izgubljen, isti CLI-ukaz varno ponastavi edinega lokalnega uporabnika.
+
 Za LAN dostop nastavite HAM_BIND_ADDRESS na konkretni naslov strežnika in HAM_ALLOWED_HOSTS na dovoljene gostitelje. Ne uporabljajte .0.0.0; HTTP promet ni šifriran.
 
 ## Dostop iz domačega omrežja

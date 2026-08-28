@@ -208,6 +208,30 @@ def test_session_default_is_one_hour(app_client):
     assert app.state.settings.session_max_age_seconds == 3600
 
 
+def test_account_management_changes_username_and_password_without_plaintext_storage(app_client):
+    app, client = app_client; login(client, follow=True)
+    account = client.get("/account")
+    assert account.status_code == 200 and "Uporabniški račun" in account.text and "Zamenjava gesla" in account.text
+    token = csrf_from(account)
+    wrong = client.post("/account/profile", data={"csrf_token": token, "username": "updated-user", "current_password": "wrong-password"})
+    assert wrong.status_code == 422 and "Trenutno geslo ni pravilno" in wrong.text
+    changed_name = client.post("/account/profile", data={"csrf_token": token, "username": "updated-user", "current_password": TEST_PASSWORD}, follow_redirects=False)
+    assert changed_name.status_code == 303
+    token = csrf_from(client.get("/account")); new_password = "A different secure password 2026!"
+    changed_password = client.post("/account/password", data={"csrf_token": token, "current_password": TEST_PASSWORD, "new_password": new_password, "password_confirmation": new_password}, follow_redirects=False)
+    assert changed_password.status_code == 303 and changed_password.headers["location"] == "/account?saved=password"
+    with app.state.session_factory() as db:
+        from app.models import LocalUser
+        user = db.query(LocalUser).one()
+        assert user.username == "updated-user" and user.password_hash not in {TEST_PASSWORD, new_password}
+        assert user.password_hash.startswith("$argon2id$") and user.session_id_hash
+    assert client.get("/account").status_code == 200
+    token = csrf_from(client.get("/account")); client.post("/logout", data={"csrf_token": token})
+    old_login = client.post("/login", data={"username": "updated-user", "password": TEST_PASSWORD, "csrf_token": csrf_from(client.get("/login")), "next_path": "/assets"})
+    assert old_login.status_code == 401
+    assert client.post("/login", data={"username": "updated-user", "password": new_password, "csrf_token": csrf_from(client.get("/login")), "next_path": "/assets"}, follow_redirects=False).status_code == 303
+
+
 def test_entry_and_register_are_separate(app_client):
     _, client = app_client; login(client)
     entry = client.get("/assets/new"); register = client.get("/assets")

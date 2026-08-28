@@ -27,4 +27,5 @@
 - Mobilni pogled pri širini 430 px nima vodoravnega preliva; izbira več sredstev in fotografiranje sta dosegljiva.
 - Novo in migrirano sredstvo ima unikatno inventarno številko oblike `HAM-NNNNNN`.
 - QR PNG vsebuje naziv in inventarno številko, predloga nalepke pa se izdela pri pravilni pikselni velikosti za izbrani NIIMBOT model in fizično velikost.
-- Celoten avtomatski sklop vsebuje 29 uspešnih testov.
+- Upravljanje računa zahteva trenutno geslo; novo geslo je v bazi samo kot Argon2id hash in razveljavi druge seje.
+- Celoten avtomatski sklop vsebuje 30 uspešnih testov.

@@ -21,7 +21,7 @@ from app.models import Asset, Attachment, LocalUser
 from app.invoice_extraction import LocalInvoiceExtractor
 from app.labels import LABEL_SIZES, PRINTERS, label_png, qr_png
 from app.asset_ai import GeminiVisionAnalyzer
-from app.security import DUMMY_HASH, MAX_FAILED_LOGINS, constant_time_equal, hash_session_id, lockout_deadline, logger, new_csrf_token, new_session_id, utcnow, verify_password
+from app.security import DUMMY_HASH, MAX_FAILED_LOGINS, MIN_PASSWORD_LENGTH, constant_time_equal, hash_password, hash_session_id, lockout_deadline, logger, new_csrf_token, new_session_id, utcnow, verify_password
 
 BASE_DIR = Path(__file__).resolve().parent
 CONDITIONS = {"new", "used", "refurbished", "unknown"}
@@ -275,6 +275,48 @@ def create_app(settings=None):
         request.session.clear()
         logger.info("security_event=logout")
         return RedirectResponse("/login", status_code=303)
+
+    @app.get("/account", response_class=HTMLResponse)
+    def account_page(request: Request, db: Session = Depends(get_db)):
+        user = db.get(LocalUser, request.session.get("uid"))
+        if not user: return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(request, "account.html", {"user": user, "csrf_token": ensure_csrf(request), "saved": request.query_params.get("saved")})
+
+    @app.post("/account/profile", response_class=HTMLResponse)
+    async def update_account_profile(request: Request, db: Session = Depends(get_db)):
+        form = await request.form(); user = db.get(LocalUser, request.session.get("uid"))
+        if not user: return RedirectResponse("/login", status_code=303)
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        username, current_password = (form.get("username") or "").strip(), form.get("current_password") or ""
+        error = None
+        if not 3 <= len(username) <= 100: error = "Uporabniško ime mora imeti od 3 do 100 znakov."
+        elif not verify_password(user.password_hash, current_password): error = "Trenutno geslo ni pravilno."
+        elif db.scalar(select(LocalUser.id).where(LocalUser.username == username, LocalUser.id != user.id)): error = "To uporabniško ime je že uporabljeno."
+        if error:
+            return templates.TemplateResponse(request, "account.html", {"user": user, "error_profile": error, "csrf_token": ensure_csrf(request)}, status_code=422)
+        user.username = username; db.commit(); logger.info("security_event=account_profile_updated")
+        return RedirectResponse("/account?saved=profile", status_code=303)
+
+    @app.post("/account/password", response_class=HTMLResponse)
+    async def update_account_password(request: Request, db: Session = Depends(get_db)):
+        form = await request.form(); user = db.get(LocalUser, request.session.get("uid"))
+        if not user: return RedirectResponse("/login", status_code=303)
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        current_password, new_password, confirmation = form.get("current_password") or "", form.get("new_password") or "", form.get("password_confirmation") or ""
+        error = None
+        if not verify_password(user.password_hash, current_password): error = "Trenutno geslo ni pravilno."
+        elif len(new_password) < MIN_PASSWORD_LENGTH: error = f"Novo geslo mora imeti najmanj {MIN_PASSWORD_LENGTH} znakov."
+        elif new_password != confirmation: error = "Novi gesli se ne ujemata."
+        elif verify_password(user.password_hash, new_password): error = "Novo geslo mora biti drugačno od trenutnega."
+        if error:
+            return templates.TemplateResponse(request, "account.html", {"user": user, "error_password": error, "csrf_token": ensure_csrf(request)}, status_code=422)
+        now, sid = utcnow(), new_session_id()
+        user.password_hash, user.session_id_hash = hash_password(new_password), hash_session_id(sid)
+        user.failed_login_count, user.locked_until = 0, None
+        db.commit()
+        request.session.clear(); request.session.update({"uid": user.id, "sid": sid, "csrf": new_csrf_token(), "last_seen": now.timestamp()})
+        logger.info("security_event=account_password_changed")
+        return RedirectResponse("/account?saved=password", status_code=303)
 
     @app.get("/", response_class=HTMLResponse)
     def home():
