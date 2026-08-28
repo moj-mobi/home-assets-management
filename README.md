@@ -2,6 +2,10 @@
 
 HAM je lokalno gostovana spletna aplikacija za evidenco domačega premoženja. Uporablja Python 3.13, FastAPI, SQLAlchemy 2, Alembic, SQLite, Jinja2 in HTMX. Uporabniški vmesnik je strežniško izrisan in ne potrebuje Node.js. Osnovno upravljanje deluje lokalno; izbirni mobilni čarovnik za prepoznavo fotografij uporablja Google Gemini API.
 
+> **AI-generated / AI-assisted:** projekt je bil razvit z obsežno pomočjo generativne umetne inteligence pod človeškim vodenjem in pregledom. Pred produkcijsko uporabo preverite kodo, varnost in ustreznost za svoj namen. Podrobnosti so v [AI-GENERATED.md](AI-GENERATED.md).
+
+Licenca: [MIT](LICENSE), Copyright © 2026 Moj-Mobi.
+
 ## Hiter zagon z Dockerjem
 
 Potrebujete Docker z dodatkom Docker Compose.
