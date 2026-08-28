@@ -146,3 +146,5 @@ Prvega uporabnika oziroma pozabljeno geslo skrbnik nastavi interaktivno z `docke
 ## Dopolnitev 29. avgusta 2026 — HAM vizualna identiteta
 
 Globalna glava aplikacije uporablja kompaktni HAM znak na vseh pogledih, prijavna stran pa polni logo. Isti transparentni znak se streže kot PNG favicon na `/favicon.ico`, kot deklariran brskalniški favicon in kot Apple touch ikona. Datoteki sta v `app/static/img/` ter ju obstoječi `COPY app ./app` samodejno vključi v Docker sliko; sprememba ne zahteva migracije baze.
+
+Pred objavo je bila izdelana varnostna kopija `ham-20260828-205911.db`. Po gradnji commita `7768f07` je bil kontejner `healthy`, `/health` je vrnil HTTP 200, favicon pa HTTP 200 kot 256 × 256 RGBA PNG s predpomnilniško glavo. Prisotnost obeh slik v kontejnerju in polnega logotipa na prijavni strani je bila potrjena.
