@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Skeniraj sredstvo · HAM{% endblock %}
+{% block content %}
+<section class="scan-shell">
+  <header class="scan-header"><a class="icon-button" href="/assets" aria-label="Nazaj">←</a><div><span class="eyebrow">Mobilni čarovnik</span><h1>Skeniraj sredstvo</h1></div></header>
+  {% if created %}
+  <section class="success-card" role="status"><h2>Sredstvo je shranjeno</h2><p><strong>{{created.name}}</strong> in njegove fotografije so uspešno dodani v evidenco.</p><div class="scan-actions"><a class="button primary" href="/assets/scan">Dodaj naslednje</a><a class="button secondary" href="/assets/{{created.id}}">Odpri shranjeno sredstvo</a><a class="button secondary" href="/assets">Končaj in odpri evidenco</a></div></section>
+  {% else %}
+  <ol class="stepper"><li class="active"><span>1</span>Zajem</li><li><span>2</span>Pregled</li><li><span>3</span>Potrditev</li></ol>
+  <section class="card scan-card">
+    <h2>Fotografirajte sredstvo</h2>
+    <p class="muted">Vse tri fotografije lahko izberete zaporedoma in jih nato skupaj pošljete v eno analizo.</p>
+    {% if not ai_enabled %}<p class="warning">AI-prepoznava še ni nastavljena. Skrbnik mora dodati veljaven Gemini API ključ.</p>{% endif %}
+    <form id="scan-form" hx-post="/assets/scan/analyze" hx-target="#scan-result" hx-encoding="multipart/form-data" hx-indicator="#scan-loading" hx-disabled-elt="#scan-submit">
+      <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+      <div class="capture-grid">
+      {% for field,label,help in [('asset_photo','Sredstvo','Celoten predmet'),('serial_photo','Serijska številka','Bližnji posnetek'),('label_photo','Nalepka','Model in podatki')] %}
+        <label class="capture-tile" data-capture-tile>
+          <input type="file" name="{{field}}" accept="image/jpeg,image/png,image/webp" capture="environment" {% if loop.first %}required{% endif %} data-preview-input>
+          <span class="capture-preview" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h4l2-2h4l2 2h4v11H4z"/><circle cx="12" cy="13" r="3"/></svg></span>
+          <strong>{{label}}</strong><span class="capture-help">{{help}}</span><span class="capture-state">Posnemi ali izberi</span>
+        </label>
+      {% endfor %}
+      </div>
+      <button id="scan-submit" class="button primary scan-submit" {% if not ai_enabled %}disabled{% endif %}>Prepoznaj vse tri fotografije</button>
+      <div id="scan-loading" class="htmx-indicator scan-progress" role="status"><span class="spinner" aria-hidden="true"></span><strong>Nalagam in analiziram fotografije …</strong><small>To lahko traja do ene minute.</small></div>
+    </form>
+  </section>
+  <div id="scan-result" aria-live="polite"></div>
+  {% endif %}
+</section>
+<script>
+document.querySelectorAll('[data-preview-input]').forEach(input=>input.addEventListener('change',()=>{
+  const tile=input.closest('[data-capture-tile]'),preview=tile.querySelector('.capture-preview'),state=tile.querySelector('.capture-state'),file=input.files[0];
+  if(!file)return;
+  const old=preview.dataset.url;if(old)URL.revokeObjectURL(old);
+  const url=URL.createObjectURL(file);preview.dataset.url=url;preview.replaceChildren(Object.assign(document.createElement('img'),{src:url,alt:''}));
+  state.textContent='Izbrano: '+file.name;tile.classList.add('has-photo');
+}));
+document.body.addEventListener('htmx:beforeRequest',e=>{if(e.target.id==='scan-form')document.querySelector('#scan-result').replaceChildren()});
+</script>
+{% endblock %}

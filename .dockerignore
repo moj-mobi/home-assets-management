@@ -4,8 +4,11 @@
 .venv
 __pycache__
 .pytest_cache
+.agents
+.deploy
+.tmp-pytest-*
+design-system
 *.py[cod]
 data
 tests
 docs
-

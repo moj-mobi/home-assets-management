@@ -122,3 +122,9 @@ Vsebnik je `healthy`, health vrača `{"status":"ok"}`, vezava pa je `10.200.100.
 ## Faza 1.2 – omejena LAN vezava
 
 Dne 24. avgusta 2026 je bila gostiteljska Docker vezava omejena z `0.0.0.0:8010` na konkretni naslov `10.200.100.11:8010`. Strežniški `.env`, ki ni v Git, vsebuje `HAM_BIND_ADDRESS=10.200.100.11`, `HAM_HOST_PORT=8010` in `HAM_SECURE_COOKIES=false`. `ss` je potrdil poslušanje samo na `10.200.100.11:8010`; wildcard vezava ni prisotna. Health je uspel lokalno na strežniku in z Windows računalnika, prijavna stran je vrnila HTTP 200, vsebnik pa je ostal `healthy`. UFW je aktiven in ni bil spremenjen, saj je bil LAN dostop že dovoljen. Dostop iz interneta ni dovoljen.
+
+## Posodobitev 28. avgusta 2026
+
+Na testni strežnik so bili objavljeni razširjena evidenca in obrazec sredstva, hitri filtri in sortiranje, odzivne mobilne kartice, mobilni fotografski čarovnik, Gemini Interactions API, trajna hramba fotografij ter vgrajeni predogled slik in PDF. Privzeti pogled evidence je `created_at DESC`.
+
+Strežniški `.env` dodatno vsebuje `GEMINI_API_KEY`, `HAM_GEMINI_MODEL=gemini-3.7-flash` in po potrebi `HAM_MAX_ATTACHMENT_BYTES`. Dejanske vrednosti skrivnosti se ne zapisujejo v dokumentacijo ali Git. Pred vsako objavo je bila izdelana SQLite varnostna kopija v `data/backups/`; po zadnji objavi je bil vsebnik `healthy`. Lokalni regresijski sklop je zaključil z 24 uspešnimi testi.

@@ -1,23 +1,143 @@
 from contextlib import asynccontextmanager
-from datetime import date
+import json
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
 from pathlib import Path
-from urllib.parse import quote
-from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from urllib.parse import quote, urlencode
+from html import escape
+import httpx
+from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, asc, desc, func, or_, select, text
+from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.config import Settings
 from app.db import build_engine, build_session_factory, session_dependency
-from app.models import Asset, LocalUser
+from app.models import Asset, Attachment, LocalUser
+from app.invoice_extraction import LocalInvoiceExtractor
+from app.asset_ai import GeminiVisionAnalyzer
 from app.security import DUMMY_HASH, MAX_FAILED_LOGINS, constant_time_equal, hash_session_id, lockout_deadline, logger, new_csrf_token, new_session_id, utcnow, verify_password
 
 BASE_DIR = Path(__file__).resolve().parent
+CONDITIONS = {"new", "used", "refurbished", "unknown"}
+STATUSES = {"in_use", "loaned", "service", "sold", "gifted", "destroyed", "stored"}
+DOCUMENT_TYPES = {"invoice", "warranty", "photo", "manual", "service", "other"}
+
+
+def optional_date(value):
+    return date.fromisoformat(value) if value else None
+
+
+def optional_decimal(value):
+    return Decimal(value) if value else None
+
+
+def add_months(value, months):
+    import calendar
+    year, month = value.year + (value.month - 1 + months) // 12, (value.month - 1 + months) % 12 + 1
+    return value.replace(year=year, month=month, day=min(value.day, calendar.monthrange(year, month)[1]))
+
+
+def file_kind(content):
+    if content.startswith(b"%PDF-"): return "application/pdf", ".pdf"
+    if content.startswith(b"\xff\xd8\xff"): return "image/jpeg", ".jpg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"): return "image/png", ".png"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP": return "image/webp", ".webp"
+    return None, None
+
+
+def age_label(asset, today=None):
+    today, start = today or date.today(), asset.received_date or asset.purchase_date
+    if not start: return "—"
+    months = max(0, (today.year-start.year)*12 + today.month-start.month - (today.day < start.day))
+    if months < 1: return "manj kot en mesec"
+    years, rest = divmod(months, 12)
+    if not years: return f"{months} mesecev" if months != 1 else "1 mesec"
+    if not rest: return f"{years} leto" if years == 1 else f"{years} let"
+    return f"{years} leto in {rest} mesece" if years == 1 else f"{years} let in {rest} mesece"
+
+
+def warranty_label(asset, today=None):
+    today = today or date.today()
+    ends = [d for d in (asset.conformity_end, asset.warranty_end) if d]
+    if not ends: return "Garancija ni evidentirana"
+    end = max(ends); days = (end-today).days
+    if days < 0:
+        years = max(0, -days // 365)
+        return f"Garancija potekla pred {years} leti" if years else f"Garancija potekla pred {-days} dnevi"
+    if days <= 30: return f"Izteče čez {days} dni"
+    return f"V garanciji – še {max(1, days//30)} mesecev"
+
+
+STATUS_LABELS = {"in_use": "V uporabi", "loaned": "Posojeno", "service": "V servisu", "sold": "Prodano", "gifted": "Podarjeno", "destroyed": "Uničeno", "stored": "Shranjeno"}
+
+
+def status_label(value): return STATUS_LABELS.get(value, value or "Ni podatka")
+def sl_date(value): return value.strftime("%d. %m. %Y") if value else "Ni podatka"
+def eur(value): return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €" if value is not None else "Ni podatka"
+def query_without(request, *keys):
+    kept = [(k, v) for k, v in request.query_params.multi_items() if k not in keys]
+    return str(request.url.replace(query=urlencode(kept)))
+
+
+def form_context(db, **extra):
+    assets = db.scalars(select(Asset)).all()
+    values = lambda attr: sorted({getattr(a, attr) for a in assets if getattr(a, attr)})
+    model_pairs = sorted({(a.manufacturer or "", a.model) for a in assets if a.model})
+    return {"categories": values("category"), "locations": values("location"), "sellers": values("seller"), "manufacturers": values("manufacturer"), "models": values("model"), "model_pairs": model_pairs, **extra}
+
+
+def populate_asset(asset, form):
+    text_fields = ("name", "category", "manufacturer", "model", "serial_number", "seller", "product_url", "invoice_number", "order_number", "location", "warranty_provider", "warranty_number", "warranty_terms_url", "notes", "warranty_notes")
+    for field in text_fields: setattr(asset, field, (form.get(field) or "").strip() or None)
+    asset.name = (form.get("name") or "").strip()
+    asset.purchase_condition = form.get("purchase_condition") if form.get("purchase_condition") in CONDITIONS else None
+    asset.status = form.get("status") if form.get("status") in STATUSES else "in_use"
+    asset.seller_type = form.get("seller_type") if form.get("seller_type") in {"business", "private", "gift", "unknown"} else None
+    if asset.id is None: asset.currency = "EUR"
+    for field in ("purchase_date", "received_date", "conformity_start", "conformity_end", "warranty_start", "warranty_end"): setattr(asset, field, optional_date(form.get(field)))
+    asset.purchase_price = optional_decimal(form.get("purchase_price"))
+    for field in ("conformity_months", "warranty_months"): setattr(asset, field, int(form[field]) if form.get(field) else None)
+    asset.conformity_source = form.get("conformity_source") or "default"
+    if asset.product_url and not asset.product_url.lower().startswith(("http://", "https://")):
+        raise ValueError("URL")
+    start = asset.received_date or asset.purchase_date
+    if asset.conformity_months and not asset.conformity_start: asset.conformity_start = start
+    if asset.conformity_months and asset.conformity_start and not asset.conformity_end: asset.conformity_end = add_months(asset.conformity_start, asset.conformity_months)
+    if asset.warranty_months and not asset.warranty_start: asset.warranty_start = start
+    if asset.warranty_months and asset.warranty_start and not asset.warranty_end: asset.warranty_end = add_months(asset.warranty_start, asset.warranty_months)
+    if asset.conformity_source == "default" and asset.seller_type == "business" and asset.purchase_condition in {"new", "used"} and asset.conformity_months is None:
+        asset.conformity_months, asset.conformity_source = 24, "default"
+        asset.conformity_start = start
+        if start: asset.conformity_end = add_months(start, 24)
+
+
+def cleanup_staged(db, settings):
+    cutoff = datetime.now() - timedelta(hours=24)
+    staged = db.scalars(select(Attachment).where(Attachment.confirmed.is_(False), Attachment.uploaded_at < cutoff)).all()
+    root = (settings.data_dir / "attachments").resolve()
+    for attachment in staged:
+        path = (root / attachment.stored_name).resolve()
+        if root in path.parents: path.unlink(missing_ok=True)
+        db.delete(attachment)
+    if staged: db.commit()
+
+
+async def store_upload(upload, document_type, settings, confirmed=False):
+    content = await upload.read(settings.max_attachment_bytes + 1)
+    if len(content) > settings.max_attachment_bytes: raise ValueError("Datoteka je prevelika.")
+    mime, extension = file_kind(content)
+    if not mime: raise ValueError("Dovoljeni so samo veljavni PDF, JPG in PNG dokumenti.")
+    import uuid
+    stored_name = f"{uuid.uuid4().hex}{extension}"
+    root = (settings.data_dir / "attachments").resolve(); path = (root / stored_name).resolve()
+    if root not in path.parents: raise ValueError("Neveljavna pot.")
+    path.write_bytes(content)
+    return Attachment(original_name=Path(upload.filename or "document").name[:255], stored_name=stored_name, document_type=document_type if document_type in DOCUMENT_TYPES else "other", mime_type=mime, size=len(content), confirmed=confirmed)
 
 
 def safe_next(value):
@@ -44,6 +164,9 @@ def create_app(settings=None):
     factory = build_session_factory(engine)
     get_db = partial(session_dependency, factory)
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    templates.env.globals.update(age_label=age_label, warranty_label=warranty_label, status_label=status_label, sl_date=sl_date, eur=eur, query_without=query_without)
+    extractor = LocalInvoiceExtractor()
+    vision = GeminiVisionAnalyzer(settings.gemini_api_key, settings.gemini_model)
 
     @asynccontextmanager
     async def lifespan(_):
@@ -90,12 +213,12 @@ def create_app(settings=None):
         return Response(status_code=204)
 
     @app.get("/login", response_class=HTMLResponse)
-    def login_page(request: Request, next: str = "/", db: Session = Depends(get_db)):
+    def login_page(request: Request, next: str = "/assets", db: Session = Depends(get_db)):
         initialized = db.scalar(select(LocalUser.id).limit(1)) is not None
         return templates.TemplateResponse(request, "login.html", {"csrf_token": ensure_csrf(request), "next_path": safe_next(next), "initialized": initialized})
 
     @app.post("/login", response_class=HTMLResponse)
-    def login(request: Request, username: str = Form(max_length=100), password: str = Form(max_length=1000), csrf_token: str = Form(default=""), next_path: str = Form(default="/"), db: Session = Depends(get_db)):
+    def login(request: Request, username: str = Form(max_length=100), password: str = Form(max_length=1000), csrf_token: str = Form(default=""), next_path: str = Form(default="/assets"), db: Session = Depends(get_db)):
         if not valid_csrf(request, csrf_token):
             return templates.TemplateResponse(request, "login.html", {"error": "Neveljavna zahteva.", "csrf_token": ensure_csrf(request), "next_path": safe_next(next_path), "initialized": True}, status_code=403)
         user = db.scalar(select(LocalUser).where(LocalUser.username == username))
@@ -117,7 +240,8 @@ def create_app(settings=None):
         request.session.clear()
         request.session.update({"uid": user.id, "sid": sid, "csrf": new_csrf_token(), "last_seen": now.timestamp()})
         logger.info("security_event=login_success")
-        return RedirectResponse(safe_next(next_path), status_code=303)
+        destination = safe_next(next_path)
+        return RedirectResponse("/assets" if destination == "/" else destination, status_code=303)
 
     @app.post("/logout")
     def logout(request: Request, csrf_token: str = Form(default=""), db: Session = Depends(get_db)):
@@ -132,23 +256,257 @@ def create_app(settings=None):
         return RedirectResponse("/login", status_code=303)
 
     @app.get("/", response_class=HTMLResponse)
+    def home():
+        return RedirectResponse("/assets", status_code=303)
+
+    @app.get("/assets/new", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)):
-        assets = db.scalars(select(Asset).order_by(Asset.created_at.desc())).all()
-        return templates.TemplateResponse(request, "index.html", {"assets": assets, "csrf_token": ensure_csrf(request)})
+        return templates.TemplateResponse(request, "index.html", {"csrf_token": ensure_csrf(request), **form_context(db)})
+
+    @app.get("/assets/scan", response_class=HTMLResponse)
+    def scan_asset(request: Request, db: Session = Depends(get_db)):
+        created = db.get(Asset, int(request.query_params["created"])) if request.query_params.get("created", "").isdigit() else None
+        return templates.TemplateResponse(request, "asset_scan.html", {"csrf_token": ensure_csrf(request), "ai_enabled": bool(settings.gemini_api_key), "created": created, **form_context(db)})
+
+    @app.post("/assets/scan/analyze", response_class=HTMLResponse)
+    async def analyze_asset_photos(request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        uploads = [form.get(k) for k in ("asset_photo", "serial_photo", "label_photo")]
+        images, attachments = [], []
+        try:
+            for upload in uploads:
+                if upload is None or not getattr(upload, "filename", ""): continue
+                attachment = await store_upload(upload, "photo", settings)
+                content = (settings.data_dir / "attachments" / attachment.stored_name).read_bytes()
+                images.append((content, attachment.mime_type)); attachments.append(attachment)
+            if not images: raise ValueError("Posnemite ali izberite vsaj eno fotografijo.")
+            data = await vision.analyze(images)
+            for attachment in attachments: db.add(attachment)
+            db.commit()
+            return templates.TemplateResponse(request, "asset_scan_review.html", {"data": data, "attachments": attachments, "csrf_token": ensure_csrf(request), **form_context(db)})
+        except (ValueError, RuntimeError, httpx.HTTPError, json.JSONDecodeError) as exc:
+            root = (settings.data_dir / "attachments").resolve()
+            for attachment in attachments:
+                path = (root / attachment.stored_name).resolve()
+                if root in path.parents: path.unlink(missing_ok=True)
+            # HTMX privzeto ne zamenja cilja pri 4xx, zato pričakovano napako
+            # vrnemo kot viden delni HTML. Obrazec in seja ostaneta nedotaknjena.
+            return HTMLResponse(f'<div class="error scan-error" role="alert">{escape(str(exc))}</div>')
+
+    @app.get("/assets", response_class=HTMLResponse)
+    def asset_register(request: Request, db: Session = Depends(get_db)):
+        p = request.query_params; query = select(Asset).options(selectinload(Asset.attachments))
+        term = p.get("q", "").strip()
+        if term:
+            like = f"%{term}%"; query = query.where(or_(*[getattr(Asset, f).ilike(like) for f in ("name", "manufacturer", "model", "serial_number", "category", "seller", "location")]))
+        for param, field in (("name","name"),("serial","serial_number")):
+            if p.get(param): query = query.where(getattr(Asset, field).ilike(f"%{p[param].strip()}%"))
+        for param, field in (("category","category"),("manufacturer","manufacturer"),("location","location"),("status","status")):
+            if p.get(param): query = query.where(getattr(Asset, field) == p[param])
+        try:
+            if p.get("purchase_from"): query = query.where(Asset.purchase_date >= optional_date(p["purchase_from"]))
+            if p.get("purchase_to"): query = query.where(Asset.purchase_date <= optional_date(p["purchase_to"]))
+            if p.get("price_min"): query = query.where(Asset.purchase_price >= optional_decimal(p["price_min"]))
+            if p.get("price_max"): query = query.where(Asset.purchase_price <= optional_decimal(p["price_max"]))
+        except (ValueError, InvalidOperation): pass
+        archive = p.get("archive", "active")
+        if archive == "archived": query = query.where(Asset.archived_at.is_not(None))
+        elif archive != "all": query = query.where(Asset.archived_at.is_(None))
+        invoice = p.get("invoice", "")
+        if invoice == "yes": query = query.where(Asset.attachments.any(Attachment.document_type == "invoice"))
+        elif invoice == "no": query = query.where(~Asset.attachments.any(Attachment.document_type == "invoice"))
+        coverage = p.get("warranty", ""); today = date.today()
+        has_end = or_(Asset.conformity_end.is_not(None), Asset.warranty_end.is_not(None))
+        valid_end = or_(Asset.conformity_end >= today, Asset.warranty_end >= today)
+        if coverage == "active": query = query.where(valid_end)
+        elif coverage == "expired": query = query.where(has_end, ~valid_end)
+        elif coverage == "none": query = query.where(~has_end)
+        sort_map = {"created_at": Asset.created_at, "name": Asset.name, "manufacturer": Asset.manufacturer, "purchase_date": Asset.purchase_date, "age": func.coalesce(Asset.received_date, Asset.purchase_date), "price": Asset.purchase_price, "location": Asset.location, "status": Asset.status}
+        requested_sort = p.get("sort")
+        sort = requested_sort if requested_sort in sort_map else "created_at"
+        direction = p.get("direction", "asc" if requested_sort else "desc")
+        direction = direction if direction in {"asc", "desc"} else ("asc" if requested_sort else "desc")
+        ordering = desc if direction == "desc" else asc
+        query = query.order_by(ordering(sort_map[sort]), ordering(Asset.id))
+        per_page = int(p.get("per_page", "15")) if p.get("per_page", "15") in {"15","25","50"} else 15
+        total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+        pages = max(1, (total + per_page - 1) // per_page); page = min(max(1, int(p.get("page", "1")) if p.get("page", "1").isdigit() else 1), pages)
+        assets = db.scalars(query.offset((page-1)*per_page).limit(per_page)).unique().all()
+        facets = form_context(db)
+        filter_keys = ("name","category","manufacturer","serial","location","purchase_from","purchase_to","price_min","price_max","status","warranty","invoice","archive")
+        filter_value_labels = {
+            "status": STATUS_LABELS,
+            "warranty": {"active": "Veljavna garancija", "expired": "Potekla garancija", "none": "Brez evidentirane garancije"},
+            "invoice": {"yes": "Z računom", "no": "Brez računa"},
+            "archive": {"archived": "Samo arhivirana", "all": "Aktivna in arhivirana"},
+        }
+        active_filters = [
+            (key, p.get(key), filter_value_labels.get(key, {}).get(p.get(key), p.get(key)))
+            for key in filter_keys
+            if p.get(key) and not (key == "archive" and p.get(key) == "active")
+        ]
+        start_item = (page-1)*per_page+1 if total else 0; end_item = min(page*per_page, total)
+        return templates.TemplateResponse(request, "assets.html", {"assets": assets, "csrf_token": ensure_csrf(request), "params": p, "page": page, "pages": pages, "total": total, "per_page": per_page, "sort": sort, "direction": direction, "active_filters": active_filters, "start_item": start_item, "end_item": end_item, **facets})
 
     @app.post("/assets", response_class=HTMLResponse)
-    def add_asset(request: Request, csrf_token: str = Form(default=""), name: str = Form(min_length=1, max_length=200), category: str = Form(default="", max_length=100), purchase_date: str = Form(default=""), purchase_price: str = Form(default=""), notes: str = Form(default="", max_length=5000), db: Session = Depends(get_db)):
+    async def add_asset(request: Request, db: Session = Depends(get_db)):
+        form = await request.form(); csrf_token, name = form.get("csrf_token", ""), (form.get("name") or "").strip()
         if not valid_csrf(request, csrf_token):
             return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        if not name: return templates.TemplateResponse(request, "asset_form.html", {"error": "Naziv je obvezen.", "csrf_token": ensure_csrf(request), **form_context(db)}, status_code=422)
         try:
-            parsed_date = date.fromisoformat(purchase_date) if purchase_date else None
-            parsed_price = Decimal(purchase_price) if purchase_price else None
+            asset = Asset(name=name); populate_asset(asset, form)
         except (ValueError, InvalidOperation):
-            return templates.TemplateResponse(request, "asset_form.html", {"error": "Datum ali cena nista v veljavnem formatu.", "csrf_token": ensure_csrf(request)}, status_code=422)
-        asset = Asset(name=name.strip(), category=category.strip() or None, purchase_date=parsed_date, purchase_price=parsed_price, notes=notes.strip() or None)
+            return templates.TemplateResponse(request, "asset_form.html", {"error": "Datum, trajanje ali cena niso v veljavnem formatu.", "csrf_token": ensure_csrf(request), **form_context(db)}, status_code=422)
+        cleanup_staged(db, settings)
+        attachment_ids = [int(v) for v in form.getlist("attachment_id") if str(v).isdigit()]
+        if attachment_ids:
+            attachments = db.scalars(select(Attachment).where(Attachment.id.in_(attachment_ids))).all()
+            for attachment in attachments: attachment.confirmed = True
+            asset.attachments.extend(attachments)
+        new_attachments = []
+        try:
+            for field, kind in (("invoice_file","invoice"),("warranty_file","warranty"),("photo_file","photo"),("manual_file","manual"),("other_file","other")):
+                upload = form.get(field)
+                if upload is not None and hasattr(upload, "read") and getattr(upload, "filename", ""):
+                    new_attachments.append(await store_upload(upload, kind, settings, confirmed=True))
+        except ValueError as exc:
+            root = (settings.data_dir / "attachments").resolve()
+            for staged in new_attachments:
+                path = (root / staged.stored_name).resolve()
+                if root in path.parents: path.unlink(missing_ok=True)
+            return templates.TemplateResponse(request, "asset_form.html", {"error": str(exc), "csrf_token": ensure_csrf(request), **form_context(db)}, status_code=422)
+        asset.attachments.extend(new_attachments)
         db.add(asset)
         db.commit()
-        return templates.TemplateResponse(request, "asset_row.html", {"asset": asset})
+        db.refresh(asset)
+        if request.headers.get("HX-Request") == "true": return templates.TemplateResponse(request, "asset_row.html", {"asset": asset})
+        if form.get("scan_flow") == "1": return RedirectResponse(f"/assets/scan?created={asset.id}", status_code=303)
+        return RedirectResponse(f"/assets/{asset.id}", status_code=303)
+
+    @app.post("/receipts/preview", response_class=HTMLResponse)
+    async def receipt_preview(request: Request, receipt: UploadFile = File(...), csrf_token: str = Form(default=""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        cleanup_staged(db, settings)
+        try: attachment = await store_upload(receipt, "invoice", settings)
+        except ValueError as exc: return HTMLResponse(str(exc), status_code=415)
+        db.add(attachment); db.commit(); db.refresh(attachment)
+        content = (settings.data_dir / "attachments" / attachment.stored_name).read_bytes(); data = extractor.extract(content, attachment.mime_type)
+        return templates.TemplateResponse(request, "receipt_preview.html", {"data": data, "attachment": attachment, "csrf_token": ensure_csrf(request)})
+
+    @app.post("/assets/from-receipt")
+    async def assets_from_receipt(request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        attachment = db.get(Attachment, int(form.get("attachment_id", 0)))
+        if not attachment or attachment.confirmed: return HTMLResponse("Predogled računa ne obstaja.", status_code=404)
+        names, prices = form.getlist("item_name"), form.getlist("item_price")
+        selected = {int(x) for x in form.getlist("selected_item") if str(x).isdigit()}
+        if not selected: return HTMLResponse("Izberite najmanj eno postavko.", status_code=422)
+        created = []
+        try:
+            for i in sorted(selected):
+                if i >= len(names) or not names[i].strip(): continue
+                asset = Asset(name=names[i].strip()[:200], seller=(form.get("seller") or "").strip() or None, purchase_date=optional_date(form.get("purchase_date")), invoice_number=(form.get("invoice_number") or "").strip() or None, order_number=(form.get("order_number") or "").strip() or None, purchase_price=optional_decimal(prices[i] if i < len(prices) else ""), currency="EUR", warranty_months=int(form["warranty_months"]) if form.get("warranty_months") else None, purchase_condition="new", seller_type="business", status="in_use")
+                if asset.purchase_date:
+                    asset.conformity_months, asset.conformity_source, asset.conformity_start = 24, "default", asset.purchase_date
+                    asset.conformity_end = add_months(asset.purchase_date, 24)
+                    if asset.warranty_months: asset.warranty_start, asset.warranty_end = asset.purchase_date, add_months(asset.purchase_date, asset.warranty_months)
+                asset.attachments.append(attachment); db.add(asset); created.append(asset)
+        except (ValueError, InvalidOperation): return HTMLResponse("Preverite datum, ceno in trajanje.", status_code=422)
+        if not created: return HTMLResponse("Izbrane postavke nimajo naziva.", status_code=422)
+        attachment.confirmed = True; db.commit()
+        return RedirectResponse(f"/assets/{created[0].id}", status_code=303)
+
+    @app.post("/attachments/{attachment_id}/discard")
+    def discard_staged(attachment_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        attachment = db.get(Attachment, attachment_id)
+        if not attachment or attachment.confirmed: return HTMLResponse("Začasna priloga ne obstaja.", status_code=404)
+        path = (settings.data_dir / "attachments" / attachment.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
+        db.delete(attachment); db.commit()
+        if root in path.parents: path.unlink(missing_ok=True)
+        return HTMLResponse("")
+
+    @app.post("/assets/{asset_id}/archive")
+    def archive_asset(asset_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        asset.archived_at = datetime.now(); db.commit(); return RedirectResponse("/assets", status_code=303)
+
+    @app.post("/assets/{asset_id}/restore")
+    def restore_asset(asset_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        asset.archived_at = None
+        if asset.status == "stored": asset.status = "in_use"
+        db.commit(); return RedirectResponse("/assets?archive=archived", status_code=303)
+
+    @app.get("/assets/{asset_id}", response_class=HTMLResponse)
+    def asset_detail(asset_id: int, request: Request, db: Session = Depends(get_db)):
+        asset = db.scalar(select(Asset).options(selectinload(Asset.attachments)).where(Asset.id == asset_id))
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        return templates.TemplateResponse(request, "asset_detail.html", {"asset": asset, "csrf_token": ensure_csrf(request)})
+
+    @app.get("/assets/{asset_id}/edit", response_class=HTMLResponse)
+    def asset_edit(asset_id: int, request: Request, db: Session = Depends(get_db)):
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        return templates.TemplateResponse(request, "asset_edit.html", {"asset": asset, "csrf_token": ensure_csrf(request), **form_context(db)})
+
+    @app.post("/assets/{asset_id}/edit")
+    async def update_asset(asset_id: int, request: Request, db: Session = Depends(get_db)):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        try: populate_asset(asset, form)
+        except (ValueError, InvalidOperation): return HTMLResponse("Neveljavni podatki.", status_code=422)
+        db.commit(); return RedirectResponse(f"/assets/{asset.id}", status_code=303)
+
+    @app.post("/assets/{asset_id}/attachments")
+    async def add_attachment(asset_id: int, request: Request, document: UploadFile = File(...), document_type: str = Form("other"), csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        asset = db.get(Asset, asset_id)
+        if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
+        content = await document.read(settings.max_attachment_bytes + 1); mime, extension = file_kind(content)
+        if len(content) > settings.max_attachment_bytes: return HTMLResponse("Datoteka je prevelika.", status_code=413)
+        if not mime: return HTMLResponse("Neveljavna vrsta datoteke.", status_code=415)
+        import uuid
+        stored_name = f"{uuid.uuid4().hex}{extension}"; (settings.data_dir / "attachments" / stored_name).write_bytes(content)
+        attachment = Attachment(original_name=Path(document.filename or "document").name[:255], stored_name=stored_name, document_type=document_type if document_type in DOCUMENT_TYPES else "other", mime_type=mime, size=len(content), confirmed=True)
+        asset.attachments.append(attachment); db.commit()
+        return RedirectResponse(f"/assets/{asset_id}", status_code=303)
+
+    @app.get("/attachments/{attachment_id}")
+    def preview_attachment(attachment_id: int, db: Session = Depends(get_db)):
+        attachment = db.get(Attachment, attachment_id)
+        if not attachment or not attachment.confirmed: return HTMLResponse("Priloga ne obstaja.", status_code=404)
+        path = (settings.data_dir / "attachments" / attachment.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
+        if root not in path.parents or not path.is_file(): return HTMLResponse("Priloga ne obstaja.", status_code=404)
+        return FileResponse(path, media_type=attachment.mime_type, filename=attachment.original_name, content_disposition_type="inline")
+
+    @app.get("/attachments/{attachment_id}/download")
+    def download_attachment(attachment_id: int, db: Session = Depends(get_db)):
+        attachment = db.get(Attachment, attachment_id)
+        if not attachment or not attachment.confirmed: return HTMLResponse("Priloga ne obstaja.", status_code=404)
+        path = (settings.data_dir / "attachments" / attachment.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
+        if root not in path.parents or not path.is_file(): return HTMLResponse("Priloga ne obstaja.", status_code=404)
+        return FileResponse(path, media_type=attachment.mime_type, filename=attachment.original_name, content_disposition_type="attachment")
+
+    @app.post("/attachments/{attachment_id}/delete")
+    def delete_attachment(attachment_id: int, request: Request, csrf_token: str = Form(""), db: Session = Depends(get_db)):
+        if not valid_csrf(request, csrf_token): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        attachment = db.get(Attachment, attachment_id)
+        if not attachment: return HTMLResponse("Priloga ne obstaja.", status_code=404)
+        asset_ids = [a.id for a in attachment.assets]
+        path = (settings.data_dir / "attachments" / attachment.stored_name).resolve(); root = (settings.data_dir / "attachments").resolve()
+        db.delete(attachment); db.commit()
+        if root in path.parents: path.unlink(missing_ok=True)
+        return RedirectResponse(f"/assets/{asset_ids[0]}" if asset_ids else "/", status_code=303)
 
     return app
 

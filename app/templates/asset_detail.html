@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><h1>{{asset.name}}</h1><p><a href="/assets/{{asset.id}}/edit">Uredi</a> · <a href="/assets">Nazaj na evidenco</a></p></section>
+<section class="card"><h2>Podatki</h2><dl class="details">{% for label,value in [('Kategorija',asset.category),('Proizvajalec',asset.manufacturer),('Model',asset.model),('Serijska številka',asset.serial_number),('Stanje',asset.purchase_condition),('Datum nakupa',asset.purchase_date),('Datum prevzema',asset.received_date),('Cena',asset.purchase_price),('Valuta',asset.currency),('Prodajalec',asset.seller),('Država',asset.purchase_country),('Št. računa',asset.invoice_number),('Št. naročila',asset.order_number),('Lokacija',asset.location),('Status',asset.status),('Opombe',asset.notes)] %}<dt>{{label}}</dt><dd>{{value or '—'}}</dd>{% endfor %}</dl></section>
+<section class="card"><h2>Jamstvo in garancija</h2><p><strong>Zakonsko jamstvo:</strong> {{asset.conformity_months or '—'}} mesecev; {{asset.conformity_start or '—'}}–{{asset.conformity_end or '—'}} ({{asset.conformity_source or '—'}})</p><p><strong>Komercialna garancija:</strong> {{asset.warranty_provider or '—'}}, {{asset.warranty_months or '—'}} mesecev; {{asset.warranty_start or '—'}}–{{asset.warranty_end or '—'}}</p></section>
+<section class="card attachments-card">
+  <h2>Dokumenti in priloge</h2>
+  <ul class="attachment-list">
+  {% for attachment in asset.attachments %}
+    <li class="attachment-item">
+      <button class="attachment-preview" type="button" data-attachment-preview data-preview-url="/attachments/{{attachment.id}}" data-download-url="/attachments/{{attachment.id}}/download" data-mime="{{attachment.mime_type}}" data-name="{{attachment.original_name}}">
+        <svg aria-hidden="true" viewBox="0 0 24 24">{% if attachment.mime_type.startswith('image/') %}<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 4"/>{% else %}<path d="M6 2h8l4 4v16H6zM14 2v5h5M9 13h6M9 17h6"/>{% endif %}</svg>
+        <span><strong>{{attachment.original_name}}</strong><small>{{attachment.document_type}} · {{attachment.size}} B</small></span>
+        <span class="attachment-view-label">Prikaži</span>
+      </button>
+      <div class="attachment-actions">
+        <a class="button secondary" href="/attachments/{{attachment.id}}/download" download>Prenesi</a>
+        <form method="post" action="/attachments/{{attachment.id}}/delete"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="danger">Izbriši</button></form>
+      </div>
+    </li>
+  {% else %}<li class="muted">Ni prilog.</li>{% endfor %}
+  </ul>
+  <form class="attachment-upload" method="post" action="/assets/{{asset.id}}/attachments" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><div class="form-grid"><label>Vrsta<select name="document_type"><option value="invoice">račun</option><option value="warranty">garancijski list</option><option value="photo">fotografija</option><option value="manual">navodila</option><option value="service">servisni dokument</option><option value="other">drugo</option></select></label><label>Datoteka<input type="file" name="document" accept=".pdf,.jpg,.jpeg,.png" required></label></div><button>Dodaj prilogo</button></form>
+</section>
+
+<dialog id="attachment-viewer" class="attachment-viewer" aria-labelledby="attachment-viewer-title">
+  <div class="viewer-shell">
+    <header class="viewer-header"><div><span class="eyebrow">Predogled priloge</span><h2 id="attachment-viewer-title">Dokument</h2></div><button class="icon-button" type="button" data-viewer-close aria-label="Zapri predogled"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+    <div id="attachment-viewer-content" class="viewer-content"></div>
+    <footer class="viewer-footer"><a id="attachment-viewer-download" class="button secondary" href="#" download>Prenesi datoteko</a><button type="button" data-viewer-close>Zapri</button></footer>
+  </div>
+</dialog>
+<script>
+(()=>{const dialog=document.querySelector('#attachment-viewer'),content=document.querySelector('#attachment-viewer-content'),title=document.querySelector('#attachment-viewer-title'),download=document.querySelector('#attachment-viewer-download');let trigger=null;
+function close(){dialog.close()}
+document.querySelectorAll('[data-attachment-preview]').forEach(button=>button.addEventListener('click',()=>{trigger=button;const name=button.dataset.name,url=button.dataset.previewUrl,mime=button.dataset.mime;title.textContent=name;download.href=button.dataset.downloadUrl;download.setAttribute('download',name);content.replaceChildren();if(mime.startsWith('image/')){const image=document.createElement('img');image.src=url;image.alt='Predogled: '+name;content.append(image)}else{const frame=document.createElement('iframe');frame.src=url;frame.title='Predogled: '+name;content.append(frame)}dialog.showModal()}));
+dialog.querySelectorAll('[data-viewer-close]').forEach(button=>button.addEventListener('click',close));dialog.addEventListener('close',()=>{content.replaceChildren();if(trigger)trigger.focus()});dialog.addEventListener('click',event=>{if(event.target===dialog)close()});
+})();
+</script>
+{% endblock %}

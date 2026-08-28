@@ -27,10 +27,14 @@ htmlcov/
 *.temp
 .DS_Store
 Thumbs.db
+/.agents/
+/.deploy/
+/.tmp-pytest-*/
 /data/database/*
 /data/attachments/*
 /data/backups/*
 /data/imports/*
+/data/*tests*/
 !/data/database/.gitkeep
 !/data/attachments/.gitkeep
 !/data/backups/.gitkeep

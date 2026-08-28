@@ -1,6 +1,6 @@
 # HAM — Home Assets Management
 
-HAM je lokalno gostovana spletna aplikacija za evidenco domačega premoženja. MVP uporablja Python 3.13, FastAPI, SQLAlchemy 2, Alembic, SQLite, Jinja2 in HTMX. Uporabniški vmesnik je strežniško izrisan in ne potrebuje Node.js ali zunanjih oblačnih storitev.
+HAM je lokalno gostovana spletna aplikacija za evidenco domačega premoženja. Uporablja Python 3.13, FastAPI, SQLAlchemy 2, Alembic, SQLite, Jinja2 in HTMX. Uporabniški vmesnik je strežniško izrisan in ne potrebuje Node.js. Osnovno upravljanje deluje lokalno; izbirni mobilni čarovnik za prepoznavo fotografij uporablja Google Gemini API.
 
 ## Hiter zagon z Dockerjem
 
@@ -85,6 +85,18 @@ Internetna objava ni del MVP. Za poznejši HTTPS je predviden reverse proxy (na 
 SQLAlchemy model in seja sta ločena od poti FastAPI. Povezava je nastavljiva z `HAM_DATABASE_URL`, vendar MVP podpira in preizkuša samo SQLite. Morebitni prehod na PostgreSQL bo izveden z migracijami, brez sočasnega vzdrževanja dveh baz.
 
 Statični datoteki za slog in HTMX sta vključeni lokalno, zato običajna uporaba ne potrebuje internetne povezave.
+
+## Sredstva, jamstva in priloge
+
+Obrazec vodi ločeno evidenco zakonskega jamstva za skladnost in komercialne garancije. Pri novem ali rabljenem blagu poslovnega prodajalca predlaga 24 mesecev zakonskega jamstva; uporabnik lahko trajanje in iztek vedno popravi. Priloge so v `data/attachments`, v bazi so le metapodatki in povezave.
+
+Ročni vnos je na `/assets/new`, upravljavska evidenca pa na `/assets`. Evidenca podpira iskanje, hitre filtre in razvrščanje po stolpcih, strežniško paginacijo ter mehko arhiviranje. Privzeto so najnovejši vnosi prikazani na vrhu. Arhiviranje ne izbriše sredstva ali prilog; revizija `20260826_04` doda ločen čas arhiviranja.
+
+Račun v obliki PDF, JPG ali PNG lahko pred shranjevanjem lokalno predizpolni podatke. Besedilni PDF obdela `pypdf`; slike obdela `pytesseract` s slovenskimi in angleškimi podatki Tesseract OCR (oboje je vključeno v Docker sliko). Pri neposrednem razvojnem zagonu mora biti Tesseract z jezikoma `slv` in `eng` nameščen v sistemu; brez njega ostane varen ročni vnos. Omejitev velikosti določa `HAM_MAX_ATTACHMENT_BYTES` (privzeto 10 MiB). Aplikacija preveri dejanski podpis datoteke in uporablja naključno interno ime.
+
+Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop nastavite `GEMINI_API_KEY`; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.
+
+Klik na fotografijo ali dokument na podrobnostih sredstva odpre vgrajeni predogled. Slike in PDF se strežejo z dispozicijo `inline`; izrecni gumb **Prenesi** uporablja ločeno pot za prenos. Predogled je odziven, dostopen s tipkovnico in prilagojen telefonom.
 
 ## Prijava in inicializacija uporabnika
 

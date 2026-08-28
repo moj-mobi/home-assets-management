@@ -1,2 +1,1 @@
-<tr><td>{{ asset.name }}</td><td>{{ asset.category or '—' }}</td><td>{{ asset.purchase_date or '—' }}</td><td>{% if asset.purchase_price is not none %}{{ '%.2f'|format(asset.purchase_price) }} €{% else %}—{% endif %}</td></tr>
-
+<tr><td><a href="/assets/{{asset.id}}">{{asset.name}}</a></td><td>{{([asset.manufacturer,asset.model]|select|join(' ')) or 'Ni podatka'}}</td><td>{{asset.location or 'Ni podatka'}}</td><td>{{sl_date(asset.purchase_date)}}</td><td>{{age_label(asset)}}</td><td>{{eur(asset.purchase_price)}}</td><td><span class="status-badge coverage">{{warranty_label(asset)}}</span></td><td><span class="status-badge status-{{asset.status}}">{{status_label(asset.status)}}</span></td></tr>
