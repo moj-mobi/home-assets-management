@@ -2,6 +2,7 @@
 {% block title %}Prijava — HAM{% endblock %}
 {% block content %}
 <section class="card login-card">
+  <img class="login-logo" src="{{url_for('static',path='/img/ham-logo.png')}}" width="180" height="180" alt="HAM — Home Assets Management">
   <h1>Prijava</h1>
   {% if not initialized %}<div class="error" role="alert"><strong>Lokalni uporabnik še ni inicializiran.</strong><p>Na strežniku izvedite:</p><code>docker compose exec ham python -m app.cli set-password</code><p>Ukaz vas vpraša za uporabniško ime in dvakrat skrito geslo z najmanj 12 znaki.</p></div>{% endif %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}

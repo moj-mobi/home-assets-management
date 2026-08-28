@@ -15,7 +15,7 @@ def test_home_login_and_brand_target_register(app_client):
     response = login(client, follow=False)
     assert response.headers["location"] == "/assets"
     page = client.get("/assets")
-    assert 'class="brand" href="/assets"' in page.text and 'Domov / Evidenca' in page.text
+    assert 'class="brand" href="/assets"' in page.text and '/static/img/ham-mark.png' in page.text and 'Domov / Evidenca' in page.text
 
 
 def test_accessible_hamburger_drawer_and_logout(app_client):
@@ -386,7 +386,9 @@ def test_favicon_does_not_invalidate_anonymous_login_csrf(app_client):
     _, client = app_client
     page = client.get("/login")
     token = csrf_from(page)
-    assert client.get("/favicon.ico").status_code == 204
+    favicon = client.get("/favicon.ico")
+    assert favicon.status_code == 200 and favicon.headers["content-type"] == "image/png"
+    assert favicon.content.startswith(b"\x89PNG\r\n\x1a\n")
     response = client.post("/login", data={"username": "invalid-test-user", "password": "invalid-test-password", "csrf_token": token, "next_path": "/"})
     assert response.status_code == 401
     assert "Neveljavna zahteva" not in response.text

@@ -231,7 +231,7 @@ def create_app(settings=None):
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
-        return Response(status_code=204)
+        return FileResponse(BASE_DIR / "static" / "img" / "ham-mark.png", media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, next: str = "/assets", db: Session = Depends(get_db)):
