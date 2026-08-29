@@ -54,10 +54,37 @@ class Asset(Base):
     is_group: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), index=True)
     merged_into_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id", ondelete="SET NULL"), index=True)
+    estimated_model_year_min: Mapped[int | None] = mapped_column(Integer)
+    estimated_model_year_max: Mapped[int | None] = mapped_column(Integer)
+    estimated_purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    estimated_market_value_eu_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    estimated_market_value_eu_max: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    estimated_market_value_si_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    estimated_market_value_si_max: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    estimated_warranty_likelihood: Mapped[str | None] = mapped_column(String(30))
+    estimate_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    estimate_sources_json: Mapped[str | None] = mapped_column(Text)
+    estimate_rationale: Mapped[str | None] = mapped_column(Text)
+    estimated_at: Mapped[datetime | None] = mapped_column(DateTime)
     attachments: Mapped[list["Attachment"]] = relationship(secondary=asset_attachments, back_populates="assets")
     parent: Mapped["Asset | None"] = relationship(remote_side="Asset.id", foreign_keys=[parent_id], back_populates="components")
     components: Mapped[list["Asset"]] = relationship(foreign_keys=[parent_id], back_populates="parent")
     merged_into: Mapped["Asset | None"] = relationship(remote_side="Asset.id", foreign_keys=[merged_into_id])
+    valuation_jobs: Mapped[list["AssetValuationJob"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
+
+
+class AssetValuationJob(Base):
+    __tablename__ = "asset_valuation_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(36), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued", server_default="queued", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    asset: Mapped[Asset] = relationship(back_populates="valuation_jobs")
 
 
 class Attachment(Base):

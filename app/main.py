@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -11,13 +12,14 @@ from fastapi import Depends, FastAPI, Form, Request, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, asc, desc, func, or_, select, text
+from sqlalchemy import Integer, and_, asc, cast, desc, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.config import Settings
 from app.db import build_engine, build_session_factory, session_dependency
-from app.models import Asset, Attachment, LocalUser
+from app.models import Asset, AssetValuationJob, Attachment, LocalUser
+from app.asset_valuation import GeminiAssetValuator, VALUATION_DISCLAIMER, process_valuation_batch
 from app.invoice_extraction import LocalInvoiceExtractor
 from app.labels import LABEL_SIZES, PRINTERS, label_png, qr_png
 from app.asset_ai import GeminiVisionAnalyzer
@@ -188,10 +190,19 @@ def create_app(settings=None):
     templates.env.globals.update(age_label=age_label, warranty_label=warranty_label, status_label=status_label, sl_date=sl_date, eur=eur, query_without=query_without)
     extractor = LocalInvoiceExtractor()
     vision = GeminiVisionAnalyzer(settings.gemini_api_key, settings.gemini_model)
+    valuator = GeminiAssetValuator(settings.gemini_api_key, settings.gemini_model)
+    valuation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ham-valuations")
 
     @asynccontextmanager
     async def lifespan(_):
+        with factory() as db:
+            db.query(AssetValuationJob).filter(AssetValuationJob.status == "running").update({"status": "queued", "started_at": None})
+            pending_batches = list(db.scalars(select(AssetValuationJob.batch_id).where(AssetValuationJob.status == "queued").distinct()))
+            db.commit()
+        for batch_id in pending_batches:
+            valuation_executor.submit(process_valuation_batch, factory, valuator, batch_id)
         yield
+        valuation_executor.shutdown(wait=False, cancel_futures=False)
         engine.dispose()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -397,7 +408,12 @@ def create_app(settings=None):
         ordering = desc if direction == "desc" else asc
         query = query.order_by(ordering(sort_map[sort]), ordering(Asset.id))
         per_page = int(p.get("per_page", "15")) if p.get("per_page", "15") in {"15","25","50"} else 15
-        total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+        value_view = query.order_by(None).subquery()
+        total, total_purchase_value, estimated_value_count = db.execute(select(
+            func.count(),
+            func.coalesce(func.sum(func.coalesce(value_view.c.purchase_price, value_view.c.estimated_purchase_price)), 0),
+            func.coalesce(func.sum(cast(and_(value_view.c.purchase_price.is_(None), value_view.c.estimated_purchase_price.is_not(None)), Integer)), 0),
+        ).select_from(value_view)).one()
         pages = max(1, (total + per_page - 1) // per_page); page = min(max(1, int(p.get("page", "1")) if p.get("page", "1").isdigit() else 1), pages)
         assets = db.scalars(query.offset((page-1)*per_page).limit(per_page)).unique().all()
         facets = form_context(db)
@@ -415,7 +431,28 @@ def create_app(settings=None):
             if p.get(key) and not (key == "archive" and p.get(key) == "active") and not (key == "structure" and p.get(key) == "top")
         ]
         start_item = (page-1)*per_page+1 if total else 0; end_item = min(page*per_page, total)
-        return templates.TemplateResponse(request, "assets.html", {"assets": assets, "csrf_token": ensure_csrf(request), "params": p, "page": page, "pages": pages, "total": total, "per_page": per_page, "sort": sort, "direction": direction, "active_filters": active_filters, "start_item": start_item, "end_item": end_item, **facets})
+        return templates.TemplateResponse(request, "assets.html", {"assets": assets, "csrf_token": ensure_csrf(request), "params": p, "page": page, "pages": pages, "total": total, "total_purchase_value": total_purchase_value, "estimated_value_count": estimated_value_count, "valuation_batch": p.get("valuation_batch", ""), "per_page": per_page, "sort": sort, "direction": direction, "active_filters": active_filters, "start_item": start_item, "end_item": end_item, **facets})
+
+    @app.post("/assets/valuations")
+    async def enqueue_asset_valuations(request: Request, db: Session = Depends(get_db)):
+        from uuid import uuid4
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")): return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        ids = selected_asset_ids(form.getlist("asset_id"))
+        assets = db.scalars(select(Asset).where(Asset.id.in_(ids), Asset.archived_at.is_(None), Asset.is_group.is_(False))).all() if ids else []
+        if not assets: return RedirectResponse("/assets?selection_error=valuation", status_code=303)
+        batch_id = str(uuid4())
+        db.add_all([AssetValuationJob(batch_id=batch_id, asset_id=asset.id) for asset in assets]); db.commit()
+        valuation_executor.submit(process_valuation_batch, factory, valuator, batch_id)
+        return RedirectResponse(f"/assets?valuation_batch={batch_id}", status_code=303)
+
+    @app.get("/valuations/{batch_id}/status", response_class=HTMLResponse)
+    def valuation_batch_status(batch_id: str, request: Request, db: Session = Depends(get_db)):
+        jobs = db.scalars(select(AssetValuationJob).where(AssetValuationJob.batch_id == batch_id)).all()
+        if not jobs: return HTMLResponse("Opravilo cenitve ne obstaja.", status_code=404)
+        counts = {state: sum(job.status == state for job in jobs) for state in ("queued", "running", "completed", "failed")}
+        pending = counts["queued"] + counts["running"]
+        return templates.TemplateResponse(request, "valuation_status.html", {"batch_id": batch_id, "total_jobs": len(jobs), "counts": counts, "pending": pending})
 
     @app.post("/assets", response_class=HTMLResponse)
     async def add_asset(request: Request, db: Session = Depends(get_db)):
@@ -578,7 +615,9 @@ def create_app(settings=None):
         asset = db.scalar(select(Asset).options(selectinload(Asset.attachments), selectinload(Asset.components), selectinload(Asset.parent), selectinload(Asset.merged_into)).where(Asset.id == asset_id))
         if not asset: return HTMLResponse("Sredstvo ne obstaja.", status_code=404)
         available_components = db.scalars(select(Asset).where(Asset.archived_at.is_(None), Asset.is_group.is_(False), Asset.parent_id.is_(None), Asset.id != asset.id).order_by(Asset.name)).all() if asset.is_group else []
-        return templates.TemplateResponse(request, "asset_detail.html", {"asset": asset, "available_components": available_components, "csrf_token": ensure_csrf(request)})
+        try: estimate_sources = json.loads(asset.estimate_sources_json or "[]")
+        except json.JSONDecodeError: estimate_sources = []
+        return templates.TemplateResponse(request, "asset_detail.html", {"asset": asset, "available_components": available_components, "csrf_token": ensure_csrf(request), "estimate_sources": estimate_sources, "valuation_disclaimer": VALUATION_DISCLAIMER})
 
     @app.get("/assets/{asset_id}/edit", response_class=HTMLResponse)
     def asset_edit(asset_id: int, request: Request, db: Session = Depends(get_db)):

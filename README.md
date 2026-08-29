@@ -138,6 +138,8 @@ Račun v obliki PDF, JPG ali PNG lahko pred shranjevanjem lokalno predizpolni po
 
 Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop nastavite `GEMINI_API_KEY`; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.
 
+V evidenci lahko označite eno ali več navadnih sredstev in izberete **AI-oceni vrednost**. HAM cenitve z Google Search izvede v trajni čakalni vrsti v ozadju ter shrani modelno leto, ocenjeno prvotno ceno, razpon rabljene vrednosti za EU in Slovenijo, verjetnost garancije, zaupanje in vire. Ocenjeni podatki nikoli ne prepišejo dejanske cene ali potrjene garancije. Skupna nakupna vrednost zato za vsako sredstvo uporabi dejansko ceno, če obstaja, sicer ocenjeno prvotno ceno, in jasno pokaže število uporabljenih AI-ocen. Google Search poizvedbe so lahko obračunane skladno s pogoji izbranega Gemini modela.
+
 Klik na fotografijo ali dokument na podrobnostih sredstva odpre vgrajeni predogled. Slike in PDF se strežejo z dispozicijo `inline`; izrecni gumb **Prenesi** uporablja ločeno pot za prenos. Predogled je odziven, dostopen s tipkovnico in prilagojen telefonom.
 
 ## Prijava in inicializacija uporabnika

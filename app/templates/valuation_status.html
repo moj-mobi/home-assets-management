@@ -1,0 +1,9 @@
+<aside id="valuation-status" class="valuation-status surface" role="status" aria-live="polite" {% if pending %}hx-get="/valuations/{{batch_id}}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {% if pending %}
+  <div><strong>AI-cenitev poteka</strong><span>Obdelano {{counts.completed + counts.failed}} od {{total_jobs}} sredstev.</span></div>
+  <progress value="{{counts.completed + counts.failed}}" max="{{total_jobs}}">{{counts.completed + counts.failed}} / {{total_jobs}}</progress>
+  {% else %}
+  <div><strong>AI-cenitev je zaključena</strong><span>{{counts.completed}} uspešnih{% if counts.failed %}, {{counts.failed}} neuspešnih{% endif %}. Osvežite evidenco za prikaz novih vrednosti.</span></div>
+  <a class="button secondary" href="/assets">Osveži evidenco</a>
+  {% endif %}
+</aside>

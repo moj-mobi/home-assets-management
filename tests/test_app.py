@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 from alembic import command
@@ -55,7 +56,7 @@ def test_existing_database_migrates_without_losing_asset(tmp_path, monkeypatch):
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT name FROM assets WHERE id=1").fetchone() == ("existing asset",)
         assert db.execute("SELECT inventory_number FROM assets WHERE id=1").fetchone() == ("HAM-000001",)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260828_06",)
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone() == ("20260829_07",)
 
 
 def test_manual_asset_and_separate_warranties(app_client):
@@ -408,3 +409,34 @@ def test_gemini_interactions_response_text():
     }
 
     assert GeminiVisionAnalyzer._response_text(payload) == '{"name":"Prenosnik"}'
+
+
+def test_background_valuation_persists_estimate_sources_and_disclaimer(app_client):
+    from app.asset_valuation import process_valuation_batch
+    from app.models import Asset, AssetValuationJob
+
+    app, client = app_client
+    class FakeValuator:
+        async def estimate(self, asset):
+            return {"model_year_min": 2023, "model_year_max": 2024, "estimated_original_price_eur": 299.99, "market_value_eu_min_eur": 140, "market_value_eu_max_eur": 190, "market_value_si_min_eur": 150, "market_value_si_max_eur": 200, "warranty_likelihood": "possibly_active", "confidence": .82, "rationale": "Model se je prodajal v tem obdobju.", "sources": [{"title": "Primer vira", "url": "https://example.com/item", "region": "EU"}]}
+    with app.state.session_factory() as db:
+        asset = Asset(name="Sredstvo za cenitev", manufacturer="Acme", model="X1", serial_number="SN1")
+        db.add(asset); db.flush(); db.add(AssetValuationJob(batch_id="batch-test", asset_id=asset.id)); db.commit(); asset_id = asset.id
+    process_valuation_batch(app.state.session_factory, FakeValuator(), "batch-test")
+    with app.state.session_factory() as db:
+        asset = db.get(Asset, asset_id); job = db.query(AssetValuationJob).one()
+        assert job.status == "completed" and asset.estimated_purchase_price == Decimal("299.99")
+    login(client)
+    detail = client.get(f"/assets/{asset_id}")
+    assert "Ocenjena starost in vrednost" in detail.text and "Primer vira" in detail.text
+    assert "Niso dokazilo o nakupu" in detail.text
+
+
+def test_register_total_prefers_actual_price_and_labels_estimates(app_client):
+    from app.models import Asset
+    app, client = app_client; login(client)
+    with app.state.session_factory() as db:
+        db.add_all([Asset(name="Dejanska cena", purchase_price=Decimal("100.00"), estimated_purchase_price=Decimal("999.00")), Asset(name="Ocenjena cena", estimated_purchase_price=Decimal("50.00"))]); db.commit()
+    page = client.get("/assets")
+    assert "150,00 €" in page.text and "skupna nakupna vrednost" in page.text
+    assert "1 vrednost je AI-ocena" in page.text and "AI-oceni vrednost" in page.text
