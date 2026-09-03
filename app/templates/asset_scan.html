@@ -10,7 +10,7 @@
   <section class="card scan-card">
     <h2>Fotografirajte sredstvo</h2>
     <p class="muted">Vse tri fotografije lahko izberete zaporedoma in jih nato skupaj pošljete v eno analizo.</p>
-    {% if not ai_enabled %}<p class="warning">AI-prepoznava še ni nastavljena. Skrbnik mora dodati veljaven Gemini API ključ.</p>{% endif %}
+    {% if not ai_enabled %}<p class="warning">AI-prepoznava še ni nastavljena. Dodajte Gemini API ključ v <a href="/settings/ai">Nastavitve / AI</a>.</p>{% endif %}
     <form id="scan-form" hx-post="/assets/scan/analyze" hx-target="#scan-result" hx-encoding="multipart/form-data" hx-indicator="#scan-loading" hx-disabled-elt="#scan-submit">
       <input type="hidden" name="csrf_token" value="{{csrf_token}}">
       <div class="capture-grid">

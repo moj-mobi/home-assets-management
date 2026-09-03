@@ -42,7 +42,9 @@ Kliknite sliko za prikaz v polni velikosti.
 
 ## Hiter zagon z Dockerjem
 
-Potrebujete Docker z dodatkom Docker Compose.
+Potrebujete Docker z dodatkom Docker Compose. Pri prvi namestitvi kopirajte `.env.example` v `.env` in vanjo vnesite naključno `HAM_SESSION_SECRET` z najmanj 32 znaki. Ustvarite jo z `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Ob nadgradnji obstoječo `.env` ohranite. Po zagonu nastavite uporabnika z `docker compose exec ham python -m app.cli set-password`.
+
+Za uporabo iz brskalnika prek GitHub Codespaces sledite razdelku **github.dev in GitHub Codespaces** spodaj.
 
 ```sh
 docker compose up -d --build
@@ -136,7 +138,7 @@ Vsako novo sredstvo samodejno dobi unikatno inventarno številko oblike `HAM-000
 
 Račun v obliki PDF, JPG ali PNG lahko pred shranjevanjem lokalno predizpolni podatke. Besedilni PDF obdela `pypdf`; slike obdela `pytesseract` s slovenskimi in angleškimi podatki Tesseract OCR (oboje je vključeno v Docker sliko). Pri neposrednem razvojnem zagonu mora biti Tesseract z jezikoma `slv` in `eng` nameščen v sistemu; brez njega ostane varen ročni vnos. Omejitev velikosti določa `HAM_MAX_ATTACHMENT_BYTES` (privzeto 10 MiB). Aplikacija preveri dejanski podpis datoteke in uporablja naključno interno ime.
 
-Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop nastavite `GEMINI_API_KEY`; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.
+Mobilni čarovnik je na `/assets/scan` in v glavnem meniju pod **Skeniraj sredstvo**. Sprejme do tri fotografije (celotno sredstvo, serijsko številko in nalepko), jih v eni zahtevi analizira z Gemini ter ponudi pregled in popravek pred zapisom. Po potrditvi se sredstvo in vse fotografije povežejo v evidenci. Za vklop v meniju **Nastavitve / AI** vnesite Gemini API ključ; priporočeni privzeti model je `HAM_GEMINI_MODEL=gemini-3.7-flash`. Ključa nikoli ne dodajte v Git.
 
 V evidenci lahko označite eno ali več navadnih sredstev in izberete **AI-oceni vrednost**. HAM cenitve z Google Search izvede v trajni čakalni vrsti v ozadju ter shrani modelno leto, ocenjeno prvotno ceno, razpon rabljene vrednosti za EU in Slovenijo, verjetnost garancije, zaupanje in vire. Ocenjeni podatki nikoli ne prepišejo dejanske cene ali potrjene garancije. Skupna nakupna vrednost zato za vsako sredstvo uporabi dejansko ceno, če obstaja, sicer ocenjeno prvotno ceno, in jasno pokaže število uporabljenih AI-ocen. Google Search poizvedbe so lahko obračunane skladno s pogoji izbranega Gemini modela.
 
@@ -159,3 +161,103 @@ Za LAN dostop nastavite HAM_BIND_ADDRESS na konkretni naslov strežnika in HAM_A
 ## Dostop iz domačega omrežja
 
 Ciljni strežnik HAM je v zaupanja vrednem domačem omrežju dostopen samo na `http://10.200.100.11:8010`. Gostiteljska vezava je omejena na `10.200.100.11`, ne na vse vmesnike. Uporablja se HTTP, zato je `HAM_SECURE_COOKIES=false` zavestna začasna nastavitev. Dostop iz interneta ni dovoljen. Za račun uporabite unikatno geslo; pred dostopom iz nezaupanja vrednega omrežja sta obvezna HTTPS in `HAM_SECURE_COOKIES=true`.
+
+## Nastavitve Gemini API ključa
+
+Prijavljeni uporabnik odpre **Nastavitve / AI** (`/settings/ai`), vnese ključ in izbere **Shrani in preveri ključ**. Vmesnik pokaže prve štiri znake in pet zvezdic (`ABCD*****`), stanje »Ključ je nastavljen« ter rezultat zadnjega preverjanja: zeleno **Veljaven**, rdeče **Neveljaven** ali nevtralno opozorilo, če preverjanje ni uspelo. Čas preverjanja je prikazan ob rezultatu; gumb **Preveri povezavo** ga osveži. Preverjanje uporablja [Gemini models.list](https://ai.google.dev/api/models#method:-models.list), brez generiranja vsebine. Uspeh ne zagotavlja razpoložljivosti izbranega modela ali zadostne kvote za AI-zahteve.
+
+Ključ se hrani v `data/private/gemini.json`, izven baze in Gita. Na Linuxu ima mapa dovoljenja `0700`, datoteka `0600`; pri neposrednem zagonu na Windows je dostop omejen z ACL na račun procesa. Skrbnik gostitelja lahko še vedno dostopa do ključa. Datoteka ni šifrirana in je aplikacija ne streže. Pri varnostnih kopijah celotne mape `data/` zaščitite tudi to datoteko; če je ne obnovite, ponovno vnesite ključ.
+
+Zamenjava takoj velja za nove zahteve prepoznave in posamezne cenitve, že poslane zahteve se dokončajo s prejšnjim ključem. Odstranitev trajno onemogoči AI, tudi če je v okolju ostal `GEMINI_API_KEY`; prazna zasebna datoteka mora zato ostati prisotna. Obstoječi okoljski ključ se uporablja samo, dokler zasebna datoteka še ne obstaja. Shranjeni ključ lahko zamenjate tudi, če preverjanje zaradi povezave ali omejitve storitve ne uspe.
+
+## github.dev in GitHub Codespaces
+
+**github.dev je urejevalnik, ne strežnik:** nima terminala in ne more zagnati Dockerja ali HAM. V njem lahko urejate datoteke in shranite spremembe v Git. Za delujočo aplikacijo v brskalniku uporabite **GitHub Codespaces**, za trajno domačo namestitev pa svoj Docker strežnik. [Razlika med github.dev in Codespaces](https://docs.github.com/en/codespaces/the-githubdev-web-based-editor).
+
+### Prva namestitev v Codespaces
+
+1. Odprite repozitorij na GitHubu. Za lastne spremembe najprej ustvarite fork. Izberite **Code → Codespaces → Create codespace on main**. Če ste v github.dev, se vrnite na stran repozitorija na github.com in odprite Codespace od tam.
+2. V terminalu Codespace, v korenu projekta, izvedite:
+
+   ```sh
+   docker compose version
+   python3 setup-codespaces.py
+   docker compose up -d --build --wait
+   docker compose exec ham python -m app.cli set-password
+   ```
+
+   Pripravljalna skripta ustvari `.env` z naključno sejno skrivnostjo, pravilnim UID/GID, dovoljenim gostiteljem tega Codespace in varnimi piškotki za HTTPS. Obstoječe `.env` nikoli ne prepiše. Ključ Gemini vnesete pozneje v aplikaciji. Če okolje nima Docker Compose, uporabite privzeto okolje Codespaces z Dockerjem ali svojo Docker namestitev.
+3. V zavihku **Ports** dodajte vrata **8000**, če se ne pojavijo samodejno. Vidnost pustite **Private**, protokol povezave do aplikacije **HTTP**. Kliknite **Open in Browser**: zunanji naslov uporablja HTTPS, notranja aplikacija pa HTTP. V naslovni vrstici mora biti naslov oblike `https://IME-CODESPACE-8000.DOMENA` (skripta ga tudi izpiše).
+4. Prijavite se z uporabnikom iz prejšnjega koraka. V **Nastavitve / AI** lahko dodate ključ **Google Gemini**; drugi ponudniki trenutno niso podprti.
+
+Privatna posredovana vrata zahtevajo tudi prijavo v GitHub. [Posredovanje vrat](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace) in [okoljske spremenljivke Codespaces](https://docs.github.com/en/codespaces/developing-in-a-codespace/default-environment-variables-for-your-codespace) so opisane v uradni dokumentaciji.
+
+Codespaces je razvojno okolje: aplikacija ni na voljo, ko se Codespace ustavi, in izbris Codespace odstrani njegove lokalne podatke. Pred izbrisom prenesite varnostne kopije in priloge iz okolja. Za stalno uporabo uporabite lastni strežnik. GitHub Pages prav tako ne more gostovati te aplikacije Python/SQLite.
+
+### Ponovni zagon, osvežitev in nadgradnja
+
+Po ponovnem odprtju **istega** Codespace ali ponovnem zagonu strežnika uporabite:
+
+```sh
+docker compose up -d --wait
+```
+
+Za osvežitev prikaza uporabite ponovno nalaganje strani; če brskalnik kaže star CSS, uporabite **Ctrl+Shift+R**. Osvežitev brskalnika ne posodobi kode na strežniku.
+
+Za nadgradnjo po prvi namestitvi v terminalu **iste namestitvene mape** izvedite:
+
+```sh
+sh backup-ham.sh
+git status --short
+git pull --ff-only
+docker compose up -d --build --wait
+docker compose ps
+curl --fail http://127.0.0.1:8000/health
+```
+
+Če `git status` pokaže lastne spremembe kode, jih najprej shranite v commit ali ločeno kopijo in uskladite s posodobitvijo. Če `git pull --ff-only` odpove, razrešite stanje Gita pred gradnjo. Pri forku najprej uporabite **Sync fork** na GitHubu, če želite prevzeti spremembe iz izvornega projekta. Na lastnem strežniku prilagodite zadnji URL dejanski vezavi in vratom; na naši namestitvi je `http://10.200.100.11:8010/health`.
+
+Ohranite `.env` in celotno mapo `data/`. Uporabnika in ključa ni treba nastaviti znova, pripravljalne skripte pa ne zaganjajte ponovno. Baza se nadgradi samodejno ob zagonu. Skripta `backup-ham.sh` kopira samo bazo: ločeno varnostno kopirajte še `data/attachments/`, `.env` in po potrebi `data/private/`, ki vsebuje API ključ. Kopije s skrivnostmi hranite zasebno in jih ne nalagajte v Git. Za popolno kopijo lahko HAM najprej ustavite z `docker compose stop ham`, kopirate te poti in ga ponovno zaženete.
+
+Če ustvarite **nov Codespace**, ima ta drug gostiteljski naslov. Ob obnovi obstoječe `.env` posodobite `HAM_ALLOWED_HOSTS` na novi naslov iz zavihka Ports (brez `https://`), ohranite `127.0.0.1,localhost` in nato znova ustvarite vsebnik z `docker compose up -d --force-recreate --wait`.
+
+### Namestitev na lastni Docker strežnik
+
+Datoteke lahko urejate v github.dev in jih potrdite v Git, namestitev pa izvedete v terminalu strežnika:
+
+```sh
+git clone https://github.com/moj-mobi/home-assets-management.git
+cd home-assets-management
+cp .env.example .env
+```
+
+Uredite `.env`: nastavite `HAM_SESSION_SECRET`, UID/GID strežniškega uporabnika ter želene naslove in vrata. Nato izvedite `docker compose up -d --build --wait` in `docker compose exec ham python -m app.cli set-password`. Za svojo različico uporabite URL svojega forka. Nadgradnje izvajajte s postopkom zgoraj; zasebnega domačega naslova `10.200.100.11` Codespace brez dodatne omrežne povezave ne doseže.
+
+## CSS in HTTPS reverse proxy
+
+CSS, JavaScript, logotipi in povezave filtrov uporabljajo poti na isti domeni (npr. `/static/css/app.css`). Tako brskalnik ohrani zunanji HTTPS naslov tudi, kadar HAM za proxyjem vidi HTTP; ne nastanejo absolutne HTTP povezave do teh virov. To odpravlja možen vzrok blokiranega CSS zaradi mešane vsebine.
+
+HAM namestite v koren namenske domene, npr. `https://ham.example.com/`. Objavljanje pod podpotjo, kot je `/ham/`, trenutno ni podprto, saj navigacija in obrazci uporabljajo poti od korena.
+
+Za svoj reverse proxy:
+
+- Posredujte vse poti, tudi `/static/`, na HAM, ohranite glavo `Host` in nastavite `X-Forwarded-Proto` ter `X-Forwarded-For`.
+- V `.env` dodajte zunanji gostiteljski naslov v `HAM_ALLOWED_HOSTS` (brez sheme ali poti) in za zunanji HTTPS nastavite `HAM_SECURE_COOKIES=true`.
+- `HAM_FORWARDED_ALLOW_IPS` nastavite na dejanski IP oziroma omejeno omrežje zaupanja vrednega proxyja, kot ga vidi vsebnik. Compose ga posreduje Uvicornu kot `FORWARDED_ALLOW_IPS`. Privzeto je `127.0.0.1`; pri proxyju v drugem vsebniku to običajno ni pravilen naslov. Ne uporabljajte `*`, če je backend dosegljiv tudi mimo zaupanja vrednega proxyja.
+- Po spremembi `.env` izvedite `docker compose up -d --force-recreate --wait`.
+
+Primer lokacije za Nginx, ki teče neposredno na istem gostitelju kot HAM z vezavo `127.0.0.1:8000` (znotraj že konfiguriranega HTTPS `server` bloka):
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    client_max_body_size 35m;
+}
+```
+
+Če Nginx teče v Dockerju, njegov `127.0.0.1` kaže nanj samega: uporabite naslov HAM, dosegljiv iz proxyja. Pri obstoječi LAN namestitvi naj nastavitev ustreza dejanski vezavi, ne kopirajte loopback primera dobesedno. [FastAPI za proxyjem](https://fastapi.tiangolo.com/advanced/behind-a-proxy/) in [Uvicorn nastavitve zaupanja](https://www.uvicorn.org/settings/) pojasnjujejo posredovane glave.
+
+Če slog še manjka, v brskalniku preverite zahtevo `/static/css/app.css`: mora vrniti HTTP 200 in `Content-Type: text/css`, ne prijavne strani proxyja ali 404. Napaka 400 pri odpiranju HAM običajno pomeni, da zunanjega imena ni v `HAM_ALLOWED_HOSTS`.

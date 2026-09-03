@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}AI / Gemini — HAM{% endblock %}
+{% block content %}
+<section class="page-heading"><div><span class="eyebrow">Nastavitve</span><h1>AI / Gemini</h1><p>Uredite ključ za prepoznavo fotografij in ocenjevanje vrednosti sredstev.</p></div></section>
+{% if error %}<p class="error" role="alert">{{error}}</p>{% endif %}
+{% if saved %}<p class="success-banner" role="status">Nastavitve so posodobljene.</p>{% endif %}
+<div class="account-grid">
+  <section class="card"><h2>Stanje ključa</h2>
+    {% if configured %}
+    <p><strong>Ključ je nastavljen</strong></p><p><code>{{masked_key}}</code></p>
+    <p class="key-status key-status-{{validity}}">{% if validity=='valid' %}Veljaven{% elif validity=='invalid' %}Neveljaven{% elif validity=='unavailable' %}Preverjanje ni uspelo{% else %}Veljavnost še ni preverjena{% endif %}</p>
+    {% if checked_at %}<p class="muted">Zadnje preverjanje: {{checked_at}}</p>{% endif %}
+    {% if validity=='invalid' %}<p>Gemini je ključ zavrnil. Preverite ključ in njegova dovoljenja ali ga zamenjajte.</p>{% elif validity=='unavailable' %}<p>Storitev trenutno ni dosegljiva ali je omejena. Poskusite znova pozneje.</p>{% endif %}
+    <form method="post" class="account-form" data-key-form><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button name="action" value="check">Preveri povezavo</button></form>
+    <details class="key-removal"><summary>Odstrani ključ</summary><p>Odstranitev izklopi AI-prepoznavo in AI-cenitve za nove zahteve.</p><form method="post" data-key-form><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="danger-link" name="action" value="remove">Potrdi odstranitev ključa</button></form></details>
+    {% else %}<p>Ključ ni nastavljen.</p><p class="muted">Dodajte Gemini API ključ, da omogočite AI-funkcije.</p>{% endif %}
+  </section>
+  <section class="card"><h2>{{'Zamenjava ključa' if configured else 'Dodajanje ključa'}}</h2>
+    <form method="post" class="account-form" data-key-form><input type="hidden" name="csrf_token" value="{{csrf_token}}"><label for="api-key">{{'Novi API ključ' if configured else 'API ključ'}}</label><input id="api-key" type="password" name="api_key" autocomplete="off" spellcheck="false" minlength="8" maxlength="4096" aria-describedby="key-help" required><p id="key-help" class="muted">Po shranjevanju so vidni samo prvi štirje znaki. Sprememba velja takoj za nove AI-zahteve.</p><button name="action" value="save">Shrani in preveri ključ</button></form>
+  </section>
+</div>
+<p class="muted"><strong>Podprt je samo Google Gemini.</strong> API ključi drugih ponudnikov v tej aplikaciji ne delujejo.</p>
+<p class="muted">Preverjanje potrdi dostop do Gemini API; razpoložljivost modela in poraba sta odvisni od vašega računa.</p>
+<p id="key-progress" role="status" hidden>Preverjanje in shranjevanje …</p>
+<script>document.querySelectorAll('[data-key-form]').forEach(form=>form.addEventListener('submit',event=>{if(form.dataset.busy){event.preventDefault();return}form.dataset.busy='1';form.setAttribute('aria-busy','true');document.querySelector('#key-progress').hidden=false}));</script>
+{% endblock %}

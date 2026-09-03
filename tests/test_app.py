@@ -266,7 +266,7 @@ def test_scan_shows_previews_combines_three_photos_and_surfaces_ai_error(app_cli
         ("label_photo", ("label.png", png, "image/png")),
     ])
     assert response.status_code == 200 and 'role="alert"' in response.text
-    assert "GEMINI_API_KEY" in response.text
+    assert "Nastavitve → AI / Gemini" in response.text
 
 
 def test_register_search_filters_sort_pagination_and_sizes(app_client):

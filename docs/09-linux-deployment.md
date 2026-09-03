@@ -148,3 +148,19 @@ Prvega uporabnika oziroma pozabljeno geslo skrbnik nastavi interaktivno z `docke
 Globalna glava aplikacije uporablja kompaktni HAM znak na vseh pogledih, prijavna stran pa polni logo. Isti transparentni znak se streže kot PNG favicon na `/favicon.ico`, kot deklariran brskalniški favicon in kot Apple touch ikona. Datoteki sta v `app/static/img/` ter ju obstoječi `COPY app ./app` samodejno vključi v Docker sliko; sprememba ne zahteva migracije baze.
 
 Pred objavo je bila izdelana varnostna kopija `ham-20260828-205911.db`. Po gradnji commita `7768f07` je bil kontejner `healthy`, `/health` je vrnil HTTP 200, favicon pa HTTP 200 kot 256 × 256 RGBA PNG s predpomnilniško glavo. Prisotnost obeh slik v kontejnerju in polnega logotipa na prijavni strani je bila potrjena.
+
+## 3. september 2026 — nastavitve Gemini in migracija ključa
+
+Na `10.200.100.11:8010` je nameščen modul **Nastavitve / AI** (`/settings/ai`). Obstoječi ključ je bil neposredno na strežniku prenesen iz okolja v `data/private/gemini.json`, brez izpisa ali prenosa na razvojni računalnik. Mapa ima dovoljenja `0700`, datoteka `0600`. Ključ je odstranjen iz aktivne `.env`; novi vsebnik ga uporablja iz zasebne datoteke.
+
+Preverjeno: vsebnik `healthy`, HTTP health 200, 71 ohranjenih sredstev, SQLite integrity `ok`, Alembic `20260829_07` (sprememba ne potrebuje nove migracije baze). Veljavnost ključa ostaja `unchecked`: avtomatski varnostni pregled je zavrnil zunanji klic Gemini, zato ta ni bil izveden. Uporabnik lahko preverjanje sproži z gumbom **Preveri povezavo**.
+
+Pred objavo je bila izdelana baza `data/backups/ham-20260903-040342.db`. Koda in prejšnja konfiguracija sta v zaščiteni mapi `data/backups/20260903-ai-settings/` (`code-before.tar.gz`, `env-before`); kopija okolja vsebuje skrivnosti in ima dovoljenja `0600`. Stara slika je ohranjena kot `ham-rollback:20260903-ai-settings`. Za povrnitev uporabite prejšnjo kodo, zaščiteno kopijo okolja in staro sliko; baze pri tej spremembi ni treba obnavljati.
+
+### Popravek preverjanja formata ključa — 3. september 2026
+
+Odpravljena je lokalna zavrnitev ključev s pikami in daljših ključev. Preverjanje dovoljuje 8–4096 vidnih ASCII znakov; presledki in kontrolni znaki ostanejo zavrnjeni. Regresijski sklop nastavitev: 22 uspešnih testov. Popravek je nameščen, shranjeni ključ prestane lokalno preverjanje formata brez zunanjega klica, HAM je healthy in LAN health vrne 200; 71 sredstev in integriteta baze sta ohranjena. Backup baze: `data/backups/ham-20260903-040829.db`; prejšnja koda: `data/backups/20260903-key-format-fix/code-before.tar.gz`. Pri TAR objavah je treba programskima datotekama zagotoviti dovoljenja 0644 tudi ob umask 077, sicer UID aplikacije ne more uvoziti modula. Zasebni podatki ohranijo stroga dovoljenja.
+
+### Opomba Gemini in podpora HTTPS proxyju — 3. september 2026
+
+Nameščena je opomba, da nastavitve podpirajo samo Google Gemini. Statične datoteke in filtri uporabljajo poti na isti domeni, Compose pa omogoča omejeno zaupanje proxyjem prek HAM_FORWARDED_ALLOW_IPS. README vključuje github.dev/Codespaces, pripravo s setup-codespaces.py, prvo namestitev, ponovno odpiranje in nadgradnjo. Codespaces ni bil zagnan v pravem GitHub okolju; pripravljalna skripta in povezave za proxyjem so preverjene lokalno (25 ciljnih testov). Strežnik je healthy, HTTP health 200, opomba in poti statičnih datotek so potrjene v novi sliki, vseh 71 sredstev je ohranjenih in baza je integrity ok. Backup: data/backups/ham-20260903-042214.db in data/backups/20260903-proxy-note/code-before.tar.gz. Obstoječi reverse proxy in LAN vezava nista bila spremenjena.

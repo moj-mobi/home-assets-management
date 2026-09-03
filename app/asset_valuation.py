@@ -39,17 +39,18 @@ class GeminiAssetValuator:
         self.api_key, self.model = api_key, model
 
     async def estimate(self, asset: Asset) -> dict:
-        if not self.api_key:
-            raise RuntimeError("AI-cenitev ni nastavljena. Skrbnik mora dodati GEMINI_API_KEY.")
+        api_key = self.api_key() if callable(self.api_key) else self.api_key
+        if not api_key:
+            raise RuntimeError("AI-cenitev ni nastavljena. Dodajte ključ v Nastavitve → AI / Gemini.")
         prompt = f"""Oceni domače sredstvo za osebno evidenco v Sloveniji.
 Naziv: {asset.name}\nProizvajalec: {asset.manufacturer or 'neznan'}\nModel: {asset.model or 'neznan'}\nSerijska številka: {asset.serial_number or 'ni podana'}\nKategorija: {asset.category or 'neznana'}
 Poišči preverljive javne vire. Oceni modelno leto, prvotno maloprodajno ceno z DDV v EUR ter trenutno rabljeno tržno vrednost posebej za EU in Slovenijo. Ne enači oglasne cene z doseženo prodajno ceno; če podatkov za Slovenijo ni, uporabi previdno prilagoditev EU in to pojasni. Garancijo označi samo kot verjetnost, saj datum nakupa in račun nista potrjena. Ne ugibaj natančnosti, ki je viri ne podpirajo."""
         payload = {"model": self.model, "input": prompt, "tools": [{"type": "google_search"}], "response_format": {"type": "text", "mime_type": "application/json", "schema": VALUATION_SCHEMA}, "generation_config": {"thinking_level": "low"}, "store": False}
         async with httpx.AsyncClient(timeout=90) as client:
-            response = await client.post("https://generativelanguage.googleapis.com/v1beta/interactions", headers={"x-goog-api-key": self.api_key}, json=payload)
+            response = await client.post("https://generativelanguage.googleapis.com/v1beta/interactions", headers={"x-goog-api-key": api_key}, json=payload)
             if response.status_code in {400, 401, 403}:
                 message = response.json().get("error", {}).get("message", "Gemini je zavrnil cenitev.")
-                raise RuntimeError("Gemini API ključ ni veljaven." if "API key" in message else message)
+                raise RuntimeError("Gemini API ključ ni veljaven." if "API key" in message else message.replace(api_key, "[skrito]"))
             response.raise_for_status()
         data = response.json()
         text = data.get("output_text")

@@ -33,8 +33,9 @@ class GeminiVisionAnalyzer:
         raise KeyError("Gemini response does not contain model output text")
 
     async def analyze(self, images: list[tuple[bytes, str]]) -> dict:
-        if not self.api_key:
-            raise RuntimeError("AI prepoznava ni nastavljena. Skrbnik mora dodati GEMINI_API_KEY.")
+        api_key = self.api_key() if callable(self.api_key) else self.api_key
+        if not api_key:
+            raise RuntimeError("AI prepoznava ni nastavljena. Dodajte ključ v Nastavitve → AI / Gemini.")
         input_items = [{"type": "text", "text": "Prepoznaj domače sredstvo iz fotografij. Prepiši samo jasno vidno serijsko številko; ne ugibaj je. Ostale podatke smiselno dopolni. Odgovori v slovenščini."}]
         for data, mime in images:
             input_items.append({"type": "image", "data": base64.b64encode(data).decode("ascii"), "mime_type": mime})
@@ -46,11 +47,11 @@ class GeminiVisionAnalyzer:
         }
         url = "https://generativelanguage.googleapis.com/v1beta/interactions"
         async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(url, headers={"x-goog-api-key": self.api_key}, json=payload)
+            response = await client.post(url, headers={"x-goog-api-key": api_key}, json=payload)
             if response.status_code in {400, 401, 403}:
                 message = response.json().get("error", {}).get("message", "Gemini je zavrnil zahtevo.")
                 if "API key" in message: message = "Gemini API ključ ni veljaven."
-                raise RuntimeError(message)
+                raise RuntimeError(message.replace(api_key, "[skrito]"))
             response.raise_for_status()
         try:
             text = self._response_text(response.json())

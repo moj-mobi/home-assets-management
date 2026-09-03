@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 import json
+import subprocess
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.config import Settings
+from app.ai_settings import AIKeyStore, check_key, valid_key_format
 from app.db import build_engine, build_session_factory, session_dependency
 from app.models import Asset, AssetValuationJob, Attachment, LocalUser
 from app.asset_valuation import GeminiAssetValuator, VALUATION_DISCLAIMER, process_valuation_batch
@@ -90,7 +92,8 @@ def sl_date(value): return value.strftime("%d. %m. %Y") if value else "Ni podatk
 def eur(value): return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €" if value is not None else "Ni podatka"
 def query_without(request, *keys):
     kept = [(k, v) for k, v in request.query_params.multi_items() if k not in keys]
-    return str(request.url.replace(query=urlencode(kept)))
+    query = urlencode(kept)
+    return request.url.path + ("?" + query if query else "")
 
 
 def form_context(db, **extra):
@@ -189,8 +192,9 @@ def create_app(settings=None):
     templates = Jinja2Templates(directory=BASE_DIR / "templates")
     templates.env.globals.update(age_label=age_label, warranty_label=warranty_label, status_label=status_label, sl_date=sl_date, eur=eur, query_without=query_without)
     extractor = LocalInvoiceExtractor()
-    vision = GeminiVisionAnalyzer(settings.gemini_api_key, settings.gemini_model)
-    valuator = GeminiAssetValuator(settings.gemini_api_key, settings.gemini_model)
+    ai_keys = AIKeyStore(settings.data_dir, settings.gemini_api_key)
+    vision = GeminiVisionAnalyzer(ai_keys.key, settings.gemini_model)
+    valuator = GeminiAssetValuator(ai_keys.key, settings.gemini_model)
     valuation_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ham-valuations")
 
     @asynccontextmanager
@@ -293,6 +297,41 @@ def create_app(settings=None):
         if not user: return RedirectResponse("/login", status_code=303)
         return templates.TemplateResponse(request, "account.html", {"user": user, "csrf_token": ensure_csrf(request), "saved": request.query_params.get("saved")})
 
+    def ai_settings_page(request, error=None, status_code=200):
+        return templates.TemplateResponse(request, "ai_settings.html", {
+            **ai_keys.public_state(), "csrf_token": ensure_csrf(request),
+            "error": error, "saved": request.query_params.get("saved"),
+        }, status_code=status_code, headers={"Cache-Control": "no-store"})
+
+    @app.get("/settings/ai", response_class=HTMLResponse)
+    def ai_settings_get(request: Request):
+        return ai_settings_page(request)
+
+    @app.post("/settings/ai", response_class=HTMLResponse)
+    async def ai_settings_update(request: Request):
+        form = await request.form()
+        if not valid_csrf(request, form.get("csrf_token", "")):
+            return HTMLResponse("Neveljavna zahteva.", status_code=403)
+        action = form.get("action")
+        try:
+            if action == "remove":
+                ai_keys.save("")
+            elif action in {"save", "check"}:
+                key = (form.get("api_key") or "").strip() if action == "save" else ai_keys.key()
+                if not valid_key_format(key):
+                    return ai_settings_page(request, "Vnesite veljaven API ključ (najmanj 8 znakov, brez presledkov).", 422)
+                previous = ai_keys.key()
+                validity, checked_at = await check_key(key)
+                # A pending check must never restore a concurrently removed/replaced key.
+                if ai_keys.key() != previous:
+                    return ai_settings_page(request, "Ključ je bil med preverjanjem spremenjen. Poskusite znova.", 409)
+                ai_keys.save(key, validity, checked_at)
+            else:
+                return ai_settings_page(request, "Neveljavna zahteva.", 400)
+        except (OSError, subprocess.SubprocessError):
+            return ai_settings_page(request, "Ključa ni bilo mogoče varno shraniti. Preverite dovoljenja podatkovne mape.", 503)
+        return RedirectResponse("/settings/ai?saved=1", status_code=303)
+
     @app.post("/account/profile", response_class=HTMLResponse)
     async def update_account_profile(request: Request, db: Session = Depends(get_db)):
         form = await request.form(); user = db.get(LocalUser, request.session.get("uid"))
@@ -340,7 +379,7 @@ def create_app(settings=None):
     @app.get("/assets/scan", response_class=HTMLResponse)
     def scan_asset(request: Request, db: Session = Depends(get_db)):
         created = db.get(Asset, int(request.query_params["created"])) if request.query_params.get("created", "").isdigit() else None
-        return templates.TemplateResponse(request, "asset_scan.html", {"csrf_token": ensure_csrf(request), "ai_enabled": bool(settings.gemini_api_key), "created": created, **form_context(db)})
+        return templates.TemplateResponse(request, "asset_scan.html", {"csrf_token": ensure_csrf(request), "ai_enabled": bool(ai_keys.key()), "created": created, **form_context(db)})
 
     @app.post("/assets/scan/analyze", response_class=HTMLResponse)
     async def analyze_asset_photos(request: Request, db: Session = Depends(get_db)):

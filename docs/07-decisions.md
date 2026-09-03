@@ -17,7 +17,7 @@ HAM je objavljen na konkretnem LAN naslovu `10.200.100.11:8010`, ne na wildcard 
 
 ## ADR-005: Izbirna Gemini analiza fotografij
 
-Mobilni čarovnik uporablja Google Gemini Interactions API z modelom `gemini-3.7-flash` in strukturirano izhodno shemo. Vse izbrane fotografije se analizirajo v eni zahtevi, vendar AI nikoli ne zapisuje neposredno v bazo: uporabnik mora podatke pregledati in potrditi. API ključ ostane izključno v `.env`. Osnovna evidenca ostane uporabna brez ključa.
+Mobilni čarovnik uporablja Google Gemini Interactions API z modelom `gemini-3.7-flash` in strukturirano izhodno shemo. Vse izbrane fotografije se analizirajo v eni zahtevi, vendar AI nikoli ne zapisuje neposredno v bazo: uporabnik mora podatke pregledati in potrditi. API ključ se upravlja prek Nastavitve / AI in hrani v zasebni datoteki `data/private/gemini.json`; `.env` je združljivostna možnost, dokler zasebna nastavitev ne obstaja. Osnovna evidenca ostane uporabna brez ključa.
 
 ## ADR-006: Datoteke lokalno, predogled privzeto
 

@@ -36,6 +36,7 @@ Thumbs.db
 /data/attachments/*
 /data/backups/*
 /data/imports/*
+/data/private/
 /data/*tests*/
 !/data/database/.gitkeep
 !/data/attachments/.gitkeep

@@ -12,7 +12,7 @@ Pot `/attachments/{id}` je namenjena avtenticiranemu vgrajenemu predogledu in vr
 
 ## Zajem in prepoznava
 
-Ročni vnos, lokalna OCR-predizpolnitev računa in mobilni fotografski čarovnik se zaključijo v istem validiranem zapisu sredstva. Čarovnik združi največ tri slike v eno zahtevo Gemini Interactions API, zahteva strukturiran JSON in uporabniku vedno pokaže popravljiv pregled pred potrditvijo. API ključ je samo v okolju procesa; fotografije se trajno povežejo šele ob potrditvi sredstva.
+Ročni vnos, lokalna OCR-predizpolnitev računa in mobilni fotografski čarovnik se zaključijo v istem validiranem zapisu sredstva. Čarovnik združi največ tri slike v eno zahtevo Gemini Interactions API, zahteva strukturiran JSON in uporabniku vedno pokaže popravljiv pregled pred potrditvijo. API ključ se bere iz zasebne datoteke v podatkovni mapi, pri starejših namestitvah pa iz okolja procesa; fotografije se trajno povežejo šele ob potrditvi sredstva.
 
 ## Upravljanje inventarja
 
